@@ -1,0 +1,63 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: lnz
+      POSTGRES_PASSWORD: lnz_dev_password
+      POSTGRES_DB: lnz
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lnz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://lnz:lnz_dev_password@postgres:5432/lnz
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      FILE_ENCRYPTION_KEY: ${FILE_ENCRYPTION_KEY:-dev-file-key-32-bytes-exactly!!}
+      MARKET_DATA_PROVIDER: ${MARKET_DATA_PROVIDER:-mock}
+      NEWS_PROVIDER: ${NEWS_PROVIDER:-mock}
+      MARKET_DATA_BASE_URL: ${MARKET_DATA_BASE_URL:-}
+      MARKET_DATA_API_KEY: ${MARKET_DATA_API_KEY:-}
+      NEWS_BASE_URL: ${NEWS_BASE_URL:-}
+      NEWS_API_KEY: ${NEWS_API_KEY:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-10}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./apps/api:/app
+      - uploads_data:/app/uploads
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
+      - /app/.next
+
+volumes:
+  postgres_data:
+  uploads_data:

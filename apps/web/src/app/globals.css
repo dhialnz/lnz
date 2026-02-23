@@ -1,0 +1,38 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-surface: #0f1117;
+  --color-panel: #161b22;
+  --color-border: #21262d;
+}
+
+body {
+  @apply bg-surface text-gray-100 font-sans antialiased;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  @apply bg-surface;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-border rounded-full;
+}
+
+/* Chart tick text */
+.recharts-cartesian-axis-tick-value {
+  font-size: 11px;
+  fill: #8b949e;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.recharts-tooltip-wrapper {
+  outline: none;
+}
