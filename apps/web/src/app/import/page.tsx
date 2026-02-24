@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { previewExcel, importExcel } from "@/lib/api";
+import { clearImportedData, previewExcel, importExcel } from "@/lib/api";
 import type { ParsePreview, ImportResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
@@ -16,6 +16,7 @@ export default function ImportPage() {
   const [result, setResult] = useState<ImportResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [clearMessage, setClearMessage] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = async (f: File) => {
@@ -52,14 +53,53 @@ export default function ImportPage() {
     }
   };
 
+  const handleClearImportedData = async () => {
+    const confirmed = window.confirm(
+      "Clear all imported portfolio data and recommendations? This cannot be undone.",
+    );
+    if (!confirmed) return;
+
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await clearImportedData();
+      setStep("upload");
+      setFile(null);
+      setPreview(null);
+      setResult(null);
+      setClearMessage(
+        `${res.message} Removed ${res.deleted_series_rows} rows and ${res.deleted_recommendation_rows} recommendations.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to clear imported data");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="max-w-3xl space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-gray-100">Import Portfolio</h1>
-        <p className="text-xs font-mono text-muted mt-0.5">
-          Upload an .xlsx file with weekly portfolio and benchmark returns.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-4xl leading-none font-serif tracking-tight text-white">Import Portfolio</h1>
+          <p className="text-xs font-mono text-muted mt-0.5">
+            Upload an .xlsx file with weekly portfolio and benchmark returns.
+          </p>
+        </div>
+        <button
+          onClick={handleClearImportedData}
+          disabled={loading}
+          className="text-xs font-mono px-3 py-2 rounded border border-negative/40 text-negative hover:bg-negative/10 transition-colors disabled:opacity-50"
+        >
+          {loading ? "Working..." : "Clear Imported Data"}
+        </button>
       </div>
+
+      {clearMessage && (
+        <p className="text-xs font-mono text-caution bg-amber-950 border border-caution/30 rounded px-3 py-2">
+          {clearMessage}
+        </p>
+      )}
 
       {/* Steps indicator */}
       <div className="flex items-center gap-3 text-xs font-mono">

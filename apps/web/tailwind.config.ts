@@ -9,20 +9,21 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Terminal aesthetic palette
-        surface: "#0f1117",
-        panel: "#161b22",
-        border: "#21262d",
-        muted: "#8b949e",
-        accent: "#58a6ff",
-        positive: "#3fb950",
-        negative: "#f85149",
-        caution: "#d29922",
-        neutral: "#8b949e",
+        // Premium dark command-center palette
+        surface: "#0A0A0B",
+        panel: "#141417",
+        border: "#1F1F23",
+        muted: "#6B6B70",
+        accent: "#FF5C00",
+        positive: "#22C55E",
+        negative: "#EF4444",
+        caution: "#FF8A4C",
+        neutral: "#ADADB0",
       },
       fontFamily: {
-        mono: ["'JetBrains Mono'", "ui-monospace", "SFMono-Regular", "monospace"],
+        mono: ["'DM Mono'", "ui-monospace", "SFMono-Regular", "monospace"],
         sans: ["'Inter'", "ui-sans-serif", "system-ui", "sans-serif"],
+        serif: ["'Instrument Serif'", "ui-serif", "Georgia", "serif"],
       },
     },
   },

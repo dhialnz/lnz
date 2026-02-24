@@ -10,13 +10,14 @@ import {
   YAxis,
 } from "recharts";
 import type { PortfolioSeriesRow } from "@/lib/types";
-import { fmtCurrency } from "@/lib/utils";
 
 interface ValueChartProps {
   data: PortfolioSeriesRow[];
+  currencyLabel?: string;
 }
 
-export function ValueChart({ data }: ValueChartProps) {
+export function ValueChart({ data, currencyLabel = "CAD" }: ValueChartProps) {
+  const prefix = currencyLabel === "USD" ? "$" : "CA$";
   const chartData = data.map((r) => ({
     date: r.date,
     value: r.total_value,
@@ -41,7 +42,7 @@ export function ValueChart({ data }: ValueChartProps) {
           minTickGap={40}
         />
         <YAxis
-          tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+          tickFormatter={(v) => `${prefix}${(v / 1000).toFixed(0)}k`}
           tick={{ fill: "#8b949e", fontSize: 10, fontFamily: "monospace" }}
           tickLine={false}
           axisLine={false}
@@ -56,7 +57,10 @@ export function ValueChart({ data }: ValueChartProps) {
             fontFamily: "monospace",
             color: "#e6edf3",
           }}
-          formatter={(value: number) => [fmtCurrency(value), "Total Value"]}
+          formatter={(value: number) => [
+            new Intl.NumberFormat("en-CA", { style: "currency", currency: currencyLabel === "USD" ? "USD" : "CAD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value),
+            "Total Value",
+          ]}
         />
         <Area
           type="monotone"

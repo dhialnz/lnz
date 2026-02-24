@@ -24,13 +24,29 @@ class Settings(BaseSettings):
 
     # ── Providers ────────────────────────────────────────────────────────────
     MARKET_DATA_PROVIDER: str = "mock"  # "mock" | "http"
-    NEWS_PROVIDER: str = "mock"  # "mock" | "http"
+    NEWS_PROVIDER: str = "live"  # "mock" | "http" | "live"
 
     # Generic HTTP adapter config (populated via env, never hardcoded)
     MARKET_DATA_BASE_URL: str = ""
     MARKET_DATA_API_KEY: str = ""
     NEWS_BASE_URL: str = ""
     NEWS_API_KEY: str = ""
+
+    # Optional LLM configuration (used for AI assistant).
+    # AI_PROVIDER can be: "auto" | "gemini" | "openai" | "deterministic"
+    AI_PROVIDER: str = "auto"
+
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai"
+
+    OPENAI_API_KEY: str = ""
+    OPENAI_MODEL: str = "gpt-4o-mini"
+    OPENAI_MODEL_CHAT: str = ""
+    OPENAI_MODEL_INSIGHTS: str = ""
+    OPENAI_MODEL_DASHBOARD: str = ""
+    OPENAI_MODEL_NEWS: str = ""
+    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
 
     @property
     def cors_origins_list(self) -> List[str]:

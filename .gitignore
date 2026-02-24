@@ -4,3 +4,8 @@ dist/
 build/
 coverage/
 .DS_Store
+__pycache__/
+*.pyc
+.next/
+*.tsbuildinfo
+

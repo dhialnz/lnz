@@ -57,6 +57,14 @@ class TestParsing:
         df, errors = parse_excel(content, dayfirst=True)
         assert len(df) == 3
 
+    def test_datetime_string_dates_accepted(self):
+        data = dict(VALID_DATA)
+        data["Date"] = ["2025-02-05 00:00:00", "2025-02-12 00:00:00", "2025-02-19 00:00:00"]
+        content = _make_excel(data)
+        df, _ = parse_excel(content)
+        assert len(df) == 3
+        assert str(df["date"].iloc[0]) == "2025-02-05"
+
     def test_handles_missing_optional_columns(self):
         data = {k: v for k, v in VALID_DATA.items() if k not in ("Net Deposits", "Period Deposits")}
         content = _make_excel(data)

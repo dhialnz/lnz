@@ -18,4 +18,20 @@ class RulebookOut(BaseModel):
 
 class RulebookUpdate(BaseModel):
     thresholds: dict[str, Any] | None = None
+    replace_thresholds: bool = False
     text: str | None = None
+
+
+class RiskQuizIn(BaseModel):
+    age: int
+    investment_horizon_years: int
+    liquidity_needs: str  # low | medium | high
+    drawdown_tolerance: str  # low | medium | high
+    investing_experience: str  # beginner | intermediate | advanced
+
+
+class RiskQuizRecommendationOut(BaseModel):
+    profile: str
+    score: int
+    thresholds: dict[str, Any]
+    rationale: list[str]

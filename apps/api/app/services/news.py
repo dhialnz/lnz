@@ -6,12 +6,15 @@ from __future__ import annotations
 
 from app.config import settings
 from app.providers.news.base import NewsProvider
+from app.providers.news.live import LiveNewsProvider
 from app.providers.news.mock import MockNewsProvider
 from app.providers.news.http import HttpNewsProvider
 
 
 def get_provider() -> NewsProvider:
     key = settings.NEWS_PROVIDER.lower()
+    if key == "live":
+        return LiveNewsProvider()
     if key == "http":
         return HttpNewsProvider(
             base_url=settings.NEWS_BASE_URL,

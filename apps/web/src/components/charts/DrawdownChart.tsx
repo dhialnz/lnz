@@ -15,9 +15,15 @@ import { fmtPct } from "@/lib/utils";
 
 interface DrawdownChartProps {
   data: PortfolioSeriesRow[];
+  defensiveThreshold?: number;
+  hardStopThreshold?: number;
 }
 
-export function DrawdownChart({ data }: DrawdownChartProps) {
+export function DrawdownChart({
+  data,
+  defensiveThreshold,
+  hardStopThreshold,
+}: DrawdownChartProps) {
   const chartData = data.map((r) => ({
     date: r.date,
     drawdown: r.drawdown != null ? r.drawdown * 100 : null,
@@ -47,8 +53,12 @@ export function DrawdownChart({ data }: DrawdownChartProps) {
           axisLine={false}
           width={48}
         />
-        <ReferenceLine y={-8} stroke="#d29922" strokeDasharray="3 3" strokeWidth={1} />
-        <ReferenceLine y={-10} stroke="#f85149" strokeDasharray="3 3" strokeWidth={1} />
+        {typeof defensiveThreshold === "number" && (
+          <ReferenceLine y={defensiveThreshold * 100} stroke="#d29922" strokeDasharray="3 3" strokeWidth={1} />
+        )}
+        {typeof hardStopThreshold === "number" && (
+          <ReferenceLine y={hardStopThreshold * 100} stroke="#f85149" strokeDasharray="3 3" strokeWidth={1} />
+        )}
         <Tooltip
           contentStyle={{
             backgroundColor: "#161b22",

@@ -17,7 +17,7 @@ interface VolatilityChartProps {
   volThreshold?: number;
 }
 
-export function VolatilityChart({ data, volThreshold = 0.04 }: VolatilityChartProps) {
+export function VolatilityChart({ data, volThreshold }: VolatilityChartProps) {
   const chartData = data.map((r) => ({
     date: r.date,
     vol8: r.rolling_8w_vol != null ? r.rolling_8w_vol * 100 : null,
@@ -42,13 +42,15 @@ export function VolatilityChart({ data, volThreshold = 0.04 }: VolatilityChartPr
           axisLine={false}
           width={48}
         />
-        <ReferenceLine
-          y={volThreshold * 100}
-          stroke="#d29922"
-          strokeDasharray="3 3"
-          strokeWidth={1}
-          label={{ value: "threshold", fill: "#d29922", fontSize: 9, fontFamily: "monospace" }}
-        />
+        {typeof volThreshold === "number" && (
+          <ReferenceLine
+            y={volThreshold * 100}
+            stroke="#d29922"
+            strokeDasharray="3 3"
+            strokeWidth={1}
+            label={{ value: "threshold", fill: "#d29922", fontSize: 9, fontFamily: "monospace" }}
+          />
+        )}
         <Tooltip
           contentStyle={{
             backgroundColor: "#161b22",

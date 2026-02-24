@@ -11,7 +11,7 @@ export interface Column<T> {
   className?: string;
 }
 
-interface DataTableProps<T extends Record<string, unknown>> {
+interface DataTableProps<T extends object> {
   columns: Column<T>[];
   data: T[];
   rowKey: keyof T;
@@ -20,7 +20,7 @@ interface DataTableProps<T extends Record<string, unknown>> {
 
 type SortDir = "asc" | "desc";
 
-export function DataTable<T extends Record<string, unknown>>({
+export function DataTable<T extends object>({
   columns,
   data,
   rowKey,
@@ -47,8 +47,8 @@ export function DataTable<T extends Record<string, unknown>>({
 
   const sorted = sortKey
     ? [...filtered].sort((a, b) => {
-        const av = a[sortKey];
-        const bv = b[sortKey];
+        const av = (a as Record<string, unknown>)[sortKey];
+        const bv = (b as Record<string, unknown>)[sortKey];
         const cmp = String(av).localeCompare(String(bv), undefined, { numeric: true });
         return sortDir === "asc" ? cmp : -cmp;
       })

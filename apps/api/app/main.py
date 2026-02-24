@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import health, portfolio, recommendations, market, news, rulebook
+from app.routers import ai, fx, health, holdings, market, news, portfolio, recommendations, rulebook
 
 app = FastAPI(
     title="LNZ Portfolio Analytics API",
@@ -34,6 +34,9 @@ app.include_router(recommendations.router, prefix=API_PREFIX)
 app.include_router(market.router, prefix=API_PREFIX)
 app.include_router(news.router, prefix=API_PREFIX)
 app.include_router(rulebook.router, prefix=API_PREFIX)
+app.include_router(holdings.router, prefix=API_PREFIX)
+app.include_router(fx.router, prefix=API_PREFIX)
+app.include_router(ai.router, prefix=API_PREFIX)
 
 
 @app.get("/", include_in_schema=False)

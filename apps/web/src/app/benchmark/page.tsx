@@ -4,7 +4,7 @@ export default function BenchmarkPage() {
   return (
     <div className="max-w-xl space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-gray-100">Benchmark</h1>
+        <h1 className="text-4xl leading-none font-serif tracking-tight text-white">Benchmark</h1>
         <p className="text-xs font-mono text-muted mt-0.5">
           Configure the benchmark used for alpha and beta calculations.
         </p>

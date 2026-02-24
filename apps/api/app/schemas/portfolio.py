@@ -13,6 +13,7 @@ class PortfolioSeriesRow(BaseModel):
     total_value: float
     net_deposits: float
     period_deposits: float
+    spy_close: Optional[float] = None
     period_return: float
     benchmark_return: float
     alpha: Optional[float]
@@ -60,3 +61,33 @@ class ParsePreview(BaseModel):
     rows: list[dict]
     row_count: int
     errors: list[str]
+
+
+class ClearImportedDataResult(BaseModel):
+    deleted_series_rows: int
+    deleted_import_rows: int
+    deleted_recommendation_rows: int
+    deleted_files: int
+    message: str
+
+
+class ManualWeekEntryIn(BaseModel):
+    total_value: float = Field(gt=0)
+    net_deposits: float
+
+
+class ManualWeekEntryResult(BaseModel):
+    date: date
+    spy_close: float
+    period_deposits: float
+    period_return: float
+    benchmark_return: float
+    row_count: int
+    regime: str
+    regime_explanation: str
+    message: str
+
+
+class SpyHistorySyncResult(BaseModel):
+    updated_rows: int
+    message: str

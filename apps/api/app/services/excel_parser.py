@@ -5,15 +5,14 @@ Supports .xlsx, auto-detects date formats, sanitises currency and percent string
 
 from __future__ import annotations
 
-import re
-from datetime import date
+from datetime import date, datetime
 from io import BytesIO
 from typing import Optional
 
 import pandas as pd
 
 
-# Required columns (case-insensitive canonical names → internal names)
+# Required columns (case-insensitive canonical names -> internal names)
 REQUIRED_COLUMNS: dict[str, str] = {
     "date": "date",
     "total value": "total_value",
@@ -63,13 +62,29 @@ def _sanitise_percent(val) -> Optional[float]:
 
 
 def _parse_date(val, dayfirst: bool = False) -> Optional[date]:
-    """Parse a date value from various formats."""
-    if isinstance(val, (pd.Timestamp,)):
+    """Parse a date value from various formats, including datetime strings."""
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return None
+    if isinstance(val, pd.Timestamp):
+        return val.date()
+    if isinstance(val, datetime):
         return val.date()
     if isinstance(val, date):
         return val
+
     s = str(val).strip()
+    if not s or s.lower() in ("nan", "nat", "none"):
+        return None
+
     fmts = [
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M",
+        "%m/%d/%Y %H:%M:%S",
+        "%d/%m/%Y %H:%M:%S",
+        "%m-%d-%Y %H:%M:%S",
+        "%d-%m-%Y %H:%M:%S",
         "%d/%m/%Y",
         "%m/%d/%Y",
         "%Y-%m-%d",
@@ -77,15 +92,18 @@ def _parse_date(val, dayfirst: bool = False) -> Optional[date]:
         "%m-%d-%Y",
     ]
     if dayfirst:
-        fmts = ["%d/%m/%Y", "%d-%m-%Y"] + fmts
+        fmts = ["%d/%m/%Y %H:%M:%S", "%d-%m-%Y %H:%M:%S", "%d/%m/%Y", "%d-%m-%Y"] + fmts
+
     for fmt in fmts:
         try:
-            import datetime
-
-            return datetime.datetime.strptime(s, fmt).date()
+            return datetime.strptime(s, fmt).date()
         except ValueError:
             continue
-    return None
+
+    parsed = pd.to_datetime(s, dayfirst=dayfirst, errors="coerce")
+    if pd.isna(parsed):
+        return None
+    return parsed.date()
 
 
 def _normalise_column_names(df: pd.DataFrame) -> dict[str, str]:

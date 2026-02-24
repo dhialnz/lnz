@@ -1,0 +1,329 @@
+from __future__ import annotations
+
+import datetime as dt
+import math
+import uuid
+
+import numpy as np
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.models.holdings import Holding
+from app.schemas.holdings import (
+    HoldingIn,
+    HoldingLive,
+    HoldingOut,
+    HoldingsSnapshot,
+    SparklinePoint,
+)
+from app.services import yahoo_quotes
+
+router = APIRouter(prefix="/holdings", tags=["holdings"])
+
+_RISK_FREE_ANNUAL = 0.045  # 4.5% annualised risk-free rate
+
+
+def _safe_float(val) -> float | None:
+    if val is None:
+        return None
+    try:
+        f = float(val)
+        return None if not math.isfinite(f) else f
+    except (TypeError, ValueError):
+        return None
+
+
+def _cost_per_share_usd(
+    avg_cost_per_share: float,
+    avg_cost_currency: str,
+    usd_per_cad: float | None,
+) -> float | None:
+    if avg_cost_currency == "USD":
+        return avg_cost_per_share
+    if avg_cost_currency == "CAD":
+        # Fallback to raw value if FX is unavailable to keep snapshot responsive.
+        if usd_per_cad is None:
+            return avg_cost_per_share
+        return avg_cost_per_share * usd_per_cad
+    return None
+
+
+def _quote_to_usd(
+    amount: float | None, quote_currency: str, usd_per_cad: float | None
+) -> float | None:
+    if amount is None:
+        return None
+    if quote_currency == "USD":
+        return amount
+    if quote_currency == "CAD":
+        if usd_per_cad is None:
+            return amount
+        return amount * usd_per_cad
+    return amount
+
+
+def _compute_sharpe_sortino(
+    holdings_live: list[HoldingLive],
+    total_value: float,
+) -> tuple[float | None, float | None]:
+    """
+    Compute annualised Sharpe and Sortino from the sparklines of all holdings,
+    weighted by current portfolio allocation.
+    """
+    if total_value <= 0:
+        return None, None
+
+    # Build a dict of {date: {ticker: close}} aligned across all tickers
+    date_closes: dict[str, dict[str, float]] = {}
+    for h in holdings_live:
+        if h.current_price is None or not h.sparkline:
+            continue
+        for pt in h.sparkline:
+            date_closes.setdefault(pt.date, {})[h.ticker] = pt.close
+
+    # Need at least 5 common dates
+    common_dates = sorted(
+        d for d, tickers in date_closes.items() if len(tickers) == len(
+            [h for h in holdings_live if h.current_price is not None]
+        )
+    )
+    if len(common_dates) < 5:
+        return None, None
+
+    # Compute daily portfolio returns
+    portfolio_returns: list[float] = []
+    prev_date = None
+    for d in common_dates:
+        if prev_date is None:
+            prev_date = d
+            continue
+        prev_closes = date_closes[prev_date]
+        curr_closes = date_closes[d]
+        daily_ret = 0.0
+        for h in holdings_live:
+            if h.current_price is None or h.total_value is None:
+                continue
+            weight = h.total_value / total_value
+            pc = prev_closes.get(h.ticker)
+            cc = curr_closes.get(h.ticker)
+            if pc and cc and pc != 0:
+                daily_ret += weight * ((cc / pc) - 1.0)
+        portfolio_returns.append(daily_ret)
+        prev_date = d
+
+    if len(portfolio_returns) < 4:
+        return None, None
+
+    returns_arr = np.array(portfolio_returns)
+    rf_daily = _RISK_FREE_ANNUAL / 252
+    excess = returns_arr - rf_daily
+    mean_excess = float(np.mean(excess))
+    std_all = float(np.std(returns_arr, ddof=1))
+
+    if std_all == 0:
+        return None, None
+
+    sharpe = mean_excess / std_all * math.sqrt(252)
+
+    downside = returns_arr[returns_arr < rf_daily]
+    if len(downside) < 2:
+        sortino = None
+    else:
+        std_down = float(np.std(downside, ddof=1))
+        sortino = mean_excess / std_down * math.sqrt(252) if std_down > 0 else None
+
+    return (
+        round(sharpe, 4) if math.isfinite(sharpe) else None,
+        round(sortino, 4) if sortino is not None and math.isfinite(sortino) else None,
+    )
+
+
+@router.get("", response_model=HoldingsSnapshot)
+async def get_holdings(db: Session = Depends(get_db)) -> HoldingsSnapshot:
+    rows = db.query(Holding).order_by(Holding.added_at).all()
+
+    if not rows:
+        return HoldingsSnapshot(
+            holdings=[],
+            total_cost_basis=0.0,
+            total_value=None,
+            total_unrealized_pnl=None,
+            total_unrealized_pnl_pct=None,
+            total_day_change=None,
+            total_day_change_pct=None,
+            sharpe_30d=None,
+            sortino_30d=None,
+            as_of=dt.datetime.utcnow().isoformat() + "Z",
+        )
+
+    tickers = [r.ticker for r in rows]
+    quote_map = await yahoo_quotes.fetch_all_tickers(tickers)
+    usd_per_cad = await yahoo_quotes.fetch_usd_per_cad()
+
+    holdings_live: list[HoldingLive] = []
+    for row in rows:
+        q = quote_map.get(row.ticker)
+        shares = float(row.shares)
+        avg_cost = float(row.avg_cost_per_share)
+        avg_cost_currency = (row.avg_cost_currency or "USD").upper()
+        avg_cost_usd = _cost_per_share_usd(avg_cost, avg_cost_currency, usd_per_cad)
+        total_cost = shares * avg_cost_usd if avg_cost_usd is not None else 0.0
+        quote_currency = ((q or {}).get("quote_currency") or "USD").upper()
+
+        current_price_raw = _safe_float(q.get("current_price")) if q else None
+        day_change_raw = _safe_float(q.get("day_change")) if q else None
+        current_price = _quote_to_usd(current_price_raw, quote_currency, usd_per_cad)
+        day_change = _quote_to_usd(day_change_raw, quote_currency, usd_per_cad)
+        day_change_pct = _safe_float(q.get("day_change_pct")) if q else None
+        name = (q.get("name") or row.name or row.ticker) if q else (row.name or row.ticker)
+
+        total_value: float | None = None
+        unrealized_pnl: float | None = None
+        unrealized_pnl_pct: float | None = None
+        if current_price is not None:
+            total_value = shares * current_price
+            unrealized_pnl = total_value - total_cost
+            unrealized_pnl_pct = unrealized_pnl / total_cost if total_cost != 0 else None
+
+        sparkline = [
+            SparklinePoint(
+                date=pt["date"],
+                close=(
+                    _quote_to_usd(_safe_float(pt.get("close")), quote_currency, usd_per_cad)
+                    or 0.0
+                ),
+            )
+            for pt in (q.get("history") or [])
+            if _safe_float(pt.get("close")) is not None
+        ] if q else []
+
+        holdings_live.append(
+            HoldingLive(
+                id=row.id,
+                ticker=row.ticker,
+                name=name,
+                shares=shares,
+                avg_cost_per_share=avg_cost,
+                avg_cost_currency=avg_cost_currency,
+                avg_cost_per_share_usd=avg_cost_usd,
+                notes=row.notes,
+                added_at=row.added_at,
+                current_price=current_price,
+                day_change=day_change,
+                day_change_pct=day_change_pct,
+                total_cost_basis=total_cost,
+                total_value=total_value,
+                unrealized_pnl=unrealized_pnl,
+                unrealized_pnl_pct=unrealized_pnl_pct,
+                weight=None,  # set after total_value is computed
+                sparkline=sparkline,
+            )
+        )
+
+    # Compute portfolio totals
+    total_cost_basis = sum(h.total_cost_basis for h in holdings_live)
+    values_known = [h.total_value for h in holdings_live if h.total_value is not None]
+    total_value_portfolio = sum(values_known) if values_known else None
+
+    # Set weights
+    for h in holdings_live:
+        if total_value_portfolio and h.total_value is not None and total_value_portfolio > 0:
+            h.weight = h.total_value / total_value_portfolio
+        else:
+            h.weight = None
+
+    # Total day change
+    total_day_change: float | None = None
+    total_day_change_pct: float | None = None
+    day_changes = [
+        (float(h.shares) * h.day_change)
+        for h in holdings_live
+        if h.day_change is not None
+    ]
+    if day_changes:
+        total_day_change = sum(day_changes)
+        # day_change_pct relative to previous total value
+        prev_total = sum(
+            float(h.shares) * (h.current_price - h.day_change)
+            for h in holdings_live
+            if h.current_price is not None and h.day_change is not None
+        )
+        if prev_total and prev_total != 0:
+            total_day_change_pct = total_day_change / prev_total
+
+    # Total unrealized P&L
+    pnls = [h.unrealized_pnl for h in holdings_live if h.unrealized_pnl is not None]
+    total_unrealized_pnl = sum(pnls) if pnls else None
+    total_unrealized_pnl_pct = (
+        total_unrealized_pnl / total_cost_basis
+        if total_unrealized_pnl is not None and total_cost_basis != 0
+        else None
+    )
+
+    # Sharpe / Sortino
+    sharpe, sortino = (None, None)
+    if total_value_portfolio:
+        sharpe, sortino = _compute_sharpe_sortino(holdings_live, total_value_portfolio)
+
+    return HoldingsSnapshot(
+        holdings=holdings_live,
+        total_cost_basis=total_cost_basis,
+        total_value=total_value_portfolio,
+        total_unrealized_pnl=total_unrealized_pnl,
+        total_unrealized_pnl_pct=total_unrealized_pnl_pct,
+        total_day_change=total_day_change,
+        total_day_change_pct=total_day_change_pct,
+        sharpe_30d=sharpe,
+        sortino_30d=sortino,
+        as_of=dt.datetime.utcnow().isoformat() + "Z",
+    )
+
+
+@router.post("", response_model=HoldingOut, status_code=201)
+async def add_holding(payload: HoldingIn, db: Session = Depends(get_db)) -> HoldingOut:
+    # Optionally fetch name from Yahoo at add time
+    q = await yahoo_quotes.fetch_ticker_data(payload.ticker)
+    name = q.get("name") if q else None
+
+    holding = Holding(
+        ticker=payload.ticker,
+        name=name,
+        shares=payload.shares,
+        avg_cost_per_share=payload.avg_cost_per_share,
+        avg_cost_currency=payload.avg_cost_currency,
+        notes=payload.notes,
+    )
+    db.add(holding)
+    db.commit()
+    db.refresh(holding)
+    return holding
+
+
+@router.put("/{holding_id}", response_model=HoldingOut)
+def update_holding(
+    holding_id: uuid.UUID,
+    payload: HoldingIn,
+    db: Session = Depends(get_db),
+) -> HoldingOut:
+    row = db.query(Holding).filter_by(id=holding_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Holding not found.")
+    row.ticker = payload.ticker
+    row.shares = payload.shares
+    row.avg_cost_per_share = payload.avg_cost_per_share
+    row.avg_cost_currency = payload.avg_cost_currency
+    row.notes = payload.notes
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.delete("/{holding_id}")
+def delete_holding(holding_id: uuid.UUID, db: Session = Depends(get_db)) -> dict:
+    row = db.query(Holding).filter_by(id=holding_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Holding not found.")
+    db.delete(row)
+    db.commit()
+    return {"deleted": True}

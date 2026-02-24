@@ -34,7 +34,7 @@ export default function SettingsPage() {
   return (
     <div className="max-w-2xl space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-gray-100">Settings</h1>
+        <h1 className="text-4xl leading-none font-serif tracking-tight text-white">Settings</h1>
         <p className="text-xs font-mono text-muted mt-0.5">
           Data provider configuration and market snapshot.
         </p>

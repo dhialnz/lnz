@@ -26,11 +26,22 @@ services:
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
       FILE_ENCRYPTION_KEY: ${FILE_ENCRYPTION_KEY:-dev-file-key-32-bytes-exactly!!}
       MARKET_DATA_PROVIDER: ${MARKET_DATA_PROVIDER:-mock}
-      NEWS_PROVIDER: ${NEWS_PROVIDER:-mock}
+      NEWS_PROVIDER: ${NEWS_PROVIDER:-live}
       MARKET_DATA_BASE_URL: ${MARKET_DATA_BASE_URL:-}
       MARKET_DATA_API_KEY: ${MARKET_DATA_API_KEY:-}
       NEWS_BASE_URL: ${NEWS_BASE_URL:-}
       NEWS_API_KEY: ${NEWS_API_KEY:-}
+      AI_PROVIDER: ${LNZ_AI_PROVIDER:-openai}
+      GEMINI_API_KEY: ${LNZ_GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${LNZ_GEMINI_MODEL:-gemini-2.5-flash}
+      GEMINI_BASE_URL: ${LNZ_GEMINI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai}
+      OPENAI_API_KEY: ${LNZ_OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${LNZ_OPENAI_MODEL:-gpt-4o-mini}
+      OPENAI_MODEL_CHAT: ${LNZ_OPENAI_MODEL_CHAT:-}
+      OPENAI_MODEL_INSIGHTS: ${LNZ_OPENAI_MODEL_INSIGHTS:-}
+      OPENAI_MODEL_DASHBOARD: ${LNZ_OPENAI_MODEL_DASHBOARD:-}
+      OPENAI_MODEL_NEWS: ${LNZ_OPENAI_MODEL_NEWS:-}
+      OPENAI_BASE_URL: ${LNZ_OPENAI_BASE_URL:-https://api.openai.com/v1}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-10}
     ports:
@@ -57,6 +68,7 @@ services:
       - ./apps/web:/app
       - /app/node_modules
       - /app/.next
+    command: sh -c "rm -rf /app/.next/* && npm run dev"
 
 volumes:
   postgres_data:

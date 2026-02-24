@@ -22,6 +22,7 @@ class PortfolioSeries(Base):
     total_value: Mapped[float] = mapped_column(Numeric(18, 6), nullable=False)
     net_deposits: Mapped[float] = mapped_column(Numeric(18, 6), nullable=False, default=0)
     period_deposits: Mapped[float] = mapped_column(Numeric(18, 6), nullable=False, default=0)
+    spy_close: Mapped[float | None] = mapped_column(Numeric(18, 6), nullable=True)
     period_return: Mapped[float] = mapped_column(Numeric(12, 8), nullable=False)
     benchmark_return: Mapped[float] = mapped_column(Numeric(12, 8), nullable=False)
 

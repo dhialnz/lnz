@@ -1,38 +1,98 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap");
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --color-surface: #0f1117;
-  --color-panel: #161b22;
-  --color-border: #21262d;
+  --color-surface: #0a0a0b;
+  --color-panel: #141417;
+  --color-border: #1f1f23;
+  --color-muted: #6b6b70;
+  --color-accent: #ff5c00;
+  --color-accent-soft: #ff8a4c;
+  --color-positive: #22c55e;
+  --color-negative: #ef4444;
 }
 
 body {
   @apply bg-surface text-gray-100 font-sans antialiased;
+  background-image: radial-gradient(circle at 12% 0%, #1a1a1d 0%, #0a0a0b 40%);
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+* {
+  border-color: var(--color-border);
 }
 
 /* Scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
   @apply bg-surface;
 }
 ::-webkit-scrollbar-thumb {
-  @apply bg-border rounded-full;
+  background: #2a2a2e;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3a40;
 }
 
 /* Chart tick text */
 .recharts-cartesian-axis-tick-value {
   font-size: 11px;
-  fill: #8b949e;
-  font-family: 'JetBrains Mono', monospace;
+  fill: #8b8b90;
+  font-family: "DM Mono", monospace;
 }
 
 .recharts-tooltip-wrapper {
   outline: none;
+}
+
+.hf-surface {
+  background: linear-gradient(180deg, #141417 0%, #111113 100%);
+}
+
+.hf-card {
+  @apply bg-panel border border-border rounded-xl;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+@keyframes fadeUp {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes glowPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.35);
+  }
+  60% {
+    box-shadow: 0 0 0 8px rgba(34, 197, 94, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+  }
+}
+
+.hf-fade-up {
+  animation: fadeUp 420ms ease-out both;
+}
+
+.hf-pulse-dot {
+  animation: glowPulse 1.8s ease-out infinite;
 }
