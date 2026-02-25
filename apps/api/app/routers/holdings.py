@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 import math
+import re
 import uuid
 
 import numpy as np
@@ -16,10 +18,15 @@ from app.schemas.holdings import (
     HoldingOut,
     HoldingsSnapshot,
     SparklinePoint,
+    TickerSuggestion,
 )
 from app.services import yahoo_quotes
 
 router = APIRouter(prefix="/holdings", tags=["holdings"])
+logger = logging.getLogger("lnz.holdings")
+
+# Ticker must be 1-6 uppercase letters/digits optionally followed by .XX exchange suffix.
+_VALID_TICKER = re.compile(r"^[A-Z0-9]{1,6}(\.[A-Z]{1,3})?$")
 
 _RISK_FREE_ANNUAL = 0.045  # 4.5% annualised risk-free rate
 
@@ -61,6 +68,30 @@ def _quote_to_usd(
             return amount
         return amount * usd_per_cad
     return amount
+
+
+def _period_change_from_history(
+    *,
+    shares: float,
+    current_price: float | None,
+    history_usd: list[float],
+    lookback_points: int,
+) -> tuple[float | None, float | None, float | None]:
+    """
+    Returns (change_amount, change_pct, prior_total_value).
+    lookback_points uses trading-day count (e.g., 5, 21, 252).
+    """
+    if current_price is None:
+        return None, None, None
+    if len(history_usd) <= lookback_points:
+        return None, None, None
+    prior_close = history_usd[-(lookback_points + 1)]
+    if prior_close is None or prior_close == 0:
+        return None, None, None
+    change_pct = (current_price / prior_close) - 1.0
+    change_amount = shares * (current_price - prior_close)
+    prior_total = shares * prior_close
+    return change_amount, change_pct, prior_total
 
 
 def _compute_sharpe_sortino(
@@ -152,16 +183,37 @@ async def get_holdings(db: Session = Depends(get_db)) -> HoldingsSnapshot:
             total_unrealized_pnl_pct=None,
             total_day_change=None,
             total_day_change_pct=None,
+            total_week_change=None,
+            total_week_change_pct=None,
+            total_month_change=None,
+            total_month_change_pct=None,
+            total_year_change=None,
+            total_year_change_pct=None,
             sharpe_30d=None,
             sortino_30d=None,
             as_of=dt.datetime.utcnow().isoformat() + "Z",
         )
 
     tickers = [r.ticker for r in rows]
-    quote_map = await yahoo_quotes.fetch_all_tickers(tickers)
+    quote_map = await yahoo_quotes.fetch_all_tickers(tickers, history_range="1y")
     usd_per_cad = await yahoo_quotes.fetch_usd_per_cad()
 
+    if usd_per_cad is None:
+        logger.warning(
+            "FX rate unavailable — CAD holdings will use raw CAD cost as fallback. "
+            "Values may be slightly inaccurate until FX recovers."
+        )
+    cad_holdings = [r.ticker for r in rows if (r.avg_cost_currency or "USD").upper() == "CAD"]
+    if cad_holdings and usd_per_cad is None:
+        logger.warning("CAD holdings affected by missing FX: %s", cad_holdings)
+
     holdings_live: list[HoldingLive] = []
+    week_changes: list[float] = []
+    week_prev_totals: list[float] = []
+    month_changes: list[float] = []
+    month_prev_totals: list[float] = []
+    year_changes: list[float] = []
+    year_prev_totals: list[float] = []
     for row in rows:
         q = quote_map.get(row.ticker)
         shares = float(row.shares)
@@ -186,17 +238,54 @@ async def get_holdings(db: Session = Depends(get_db)) -> HoldingsSnapshot:
             unrealized_pnl = total_value - total_cost
             unrealized_pnl_pct = unrealized_pnl / total_cost if total_cost != 0 else None
 
-        sparkline = [
-            SparklinePoint(
-                date=pt["date"],
-                close=(
-                    _quote_to_usd(_safe_float(pt.get("close")), quote_currency, usd_per_cad)
-                    or 0.0
-                ),
-            )
-            for pt in (q.get("history") or [])
-            if _safe_float(pt.get("close")) is not None
-        ] if q else []
+        history_usd: list[float] = []
+        sparkline_raw: list[SparklinePoint] = []
+        if q:
+            for pt in q.get("history") or []:
+                raw_close = _safe_float(pt.get("close"))
+                if raw_close is None:
+                    continue
+                close_usd = _quote_to_usd(raw_close, quote_currency, usd_per_cad)
+                if close_usd is None:
+                    continue
+                history_usd.append(close_usd)
+                sparkline_raw.append(
+                    SparklinePoint(
+                        date=str(pt.get("date")),
+                        close=close_usd,
+                    )
+                )
+        # Keep sparkline dense but bounded for UI rendering.
+        sparkline = sparkline_raw[-30:]
+
+        week_change, week_change_pct, week_prior_total = _period_change_from_history(
+            shares=shares,
+            current_price=current_price,
+            history_usd=history_usd,
+            lookback_points=5,
+        )
+        month_change, month_change_pct, month_prior_total = _period_change_from_history(
+            shares=shares,
+            current_price=current_price,
+            history_usd=history_usd,
+            lookback_points=21,
+        )
+        year_change, year_change_pct, year_prior_total = _period_change_from_history(
+            shares=shares,
+            current_price=current_price,
+            history_usd=history_usd,
+            lookback_points=252,
+        )
+
+        if week_change is not None and week_prior_total is not None:
+            week_changes.append(week_change)
+            week_prev_totals.append(week_prior_total)
+        if month_change is not None and month_prior_total is not None:
+            month_changes.append(month_change)
+            month_prev_totals.append(month_prior_total)
+        if year_change is not None and year_prior_total is not None:
+            year_changes.append(year_change)
+            year_prev_totals.append(year_prior_total)
 
         holdings_live.append(
             HoldingLive(
@@ -212,6 +301,12 @@ async def get_holdings(db: Session = Depends(get_db)) -> HoldingsSnapshot:
                 current_price=current_price,
                 day_change=day_change,
                 day_change_pct=day_change_pct,
+                week_change=week_change,
+                week_change_pct=week_change_pct,
+                month_change=month_change,
+                month_change_pct=month_change_pct,
+                year_change=year_change,
+                year_change_pct=year_change_pct,
                 total_cost_basis=total_cost,
                 total_value=total_value,
                 unrealized_pnl=unrealized_pnl,
@@ -252,6 +347,30 @@ async def get_holdings(db: Session = Depends(get_db)) -> HoldingsSnapshot:
         if prev_total and prev_total != 0:
             total_day_change_pct = total_day_change / prev_total
 
+    total_week_change: float | None = None
+    total_week_change_pct: float | None = None
+    if week_changes and week_prev_totals:
+        total_week_change = sum(week_changes)
+        week_prev_total = sum(week_prev_totals)
+        if week_prev_total != 0:
+            total_week_change_pct = total_week_change / week_prev_total
+
+    total_month_change: float | None = None
+    total_month_change_pct: float | None = None
+    if month_changes and month_prev_totals:
+        total_month_change = sum(month_changes)
+        month_prev_total = sum(month_prev_totals)
+        if month_prev_total != 0:
+            total_month_change_pct = total_month_change / month_prev_total
+
+    total_year_change: float | None = None
+    total_year_change_pct: float | None = None
+    if year_changes and year_prev_totals:
+        total_year_change = sum(year_changes)
+        year_prev_total = sum(year_prev_totals)
+        if year_prev_total != 0:
+            total_year_change_pct = total_year_change / year_prev_total
+
     # Total unrealized P&L
     pnls = [h.unrealized_pnl for h in holdings_live if h.unrealized_pnl is not None]
     total_unrealized_pnl = sum(pnls) if pnls else None
@@ -274,20 +393,65 @@ async def get_holdings(db: Session = Depends(get_db)) -> HoldingsSnapshot:
         total_unrealized_pnl_pct=total_unrealized_pnl_pct,
         total_day_change=total_day_change,
         total_day_change_pct=total_day_change_pct,
+        total_week_change=total_week_change,
+        total_week_change_pct=total_week_change_pct,
+        total_month_change=total_month_change,
+        total_month_change_pct=total_month_change_pct,
+        total_year_change=total_year_change,
+        total_year_change_pct=total_year_change_pct,
         sharpe_30d=sharpe,
         sortino_30d=sortino,
         as_of=dt.datetime.utcnow().isoformat() + "Z",
     )
 
 
+@router.get("/ticker-suggestions", response_model=list[TickerSuggestion])
+async def ticker_suggestions(q: str, limit: int = 8) -> list[TickerSuggestion]:
+    query = (q or "").strip()
+    if not query:
+        return []
+    results = await yahoo_quotes.search_tickers(query, limit=limit)
+    return [
+        TickerSuggestion(
+            symbol=str(r.get("symbol") or "").upper(),
+            name=r.get("name"),
+            exchange=r.get("exchange"),
+            quote_type=r.get("quote_type"),
+        )
+        for r in results
+        if r.get("symbol")
+    ]
+
+
+def _validate_ticker(ticker: str) -> str:
+    """Normalise and validate a ticker symbol. Raises HTTPException on invalid input."""
+    normalised = ticker.strip().upper()
+    if not normalised or not _VALID_TICKER.match(normalised):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid ticker format: '{ticker}'. Expected 1-6 uppercase letters/digits with optional .XX suffix.",
+        )
+    if len(normalised) < 1 or len(normalised) > 10:
+        raise HTTPException(status_code=422, detail="Ticker must be 1–10 characters.")
+    return normalised
+
+
 @router.post("", response_model=HoldingOut, status_code=201)
 async def add_holding(payload: HoldingIn, db: Session = Depends(get_db)) -> HoldingOut:
-    # Optionally fetch name from Yahoo at add time
-    q = await yahoo_quotes.fetch_ticker_data(payload.ticker)
+    ticker = _validate_ticker(payload.ticker)
+    if payload.shares <= 0:
+        raise HTTPException(status_code=422, detail="Shares must be > 0.")
+    if payload.avg_cost_per_share <= 0:
+        raise HTTPException(status_code=422, detail="Average cost per share must be > 0.")
+
+    # Optionally fetch name from Yahoo at add time.
+    q = await yahoo_quotes.fetch_ticker_data(ticker)
+    if q is None:
+        logger.warning("Could not validate ticker '%s' against Yahoo Finance on add — proceeding anyway.", ticker)
     name = q.get("name") if q else None
 
     holding = Holding(
-        ticker=payload.ticker,
+        ticker=ticker,
         name=name,
         shares=payload.shares,
         avg_cost_per_share=payload.avg_cost_per_share,
@@ -297,6 +461,7 @@ async def add_holding(payload: HoldingIn, db: Session = Depends(get_db)) -> Hold
     db.add(holding)
     db.commit()
     db.refresh(holding)
+    logger.info("Holding added: ticker=%s shares=%s", ticker, payload.shares)
     return holding
 
 
@@ -306,16 +471,23 @@ def update_holding(
     payload: HoldingIn,
     db: Session = Depends(get_db),
 ) -> HoldingOut:
+    ticker = _validate_ticker(payload.ticker)
+    if payload.shares <= 0:
+        raise HTTPException(status_code=422, detail="Shares must be > 0.")
+    if payload.avg_cost_per_share <= 0:
+        raise HTTPException(status_code=422, detail="Average cost per share must be > 0.")
+
     row = db.query(Holding).filter_by(id=holding_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Holding not found.")
-    row.ticker = payload.ticker
+    row.ticker = ticker
     row.shares = payload.shares
     row.avg_cost_per_share = payload.avg_cost_per_share
     row.avg_cost_currency = payload.avg_cost_currency
     row.notes = payload.notes
     db.commit()
     db.refresh(row)
+    logger.info("Holding updated: id=%s ticker=%s", holding_id, ticker)
     return row
 
 

@@ -1,33 +1,117 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { getAINewsSummary, getAIStatus, getPortfolioNewsImpact } from "@/lib/api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { chatAI, getAINewsSummary, getAIStatus, getPortfolioNewsImpact } from "@/lib/api";
 import type { NewsEventImpact, NewsPortfolioImpact } from "@/lib/types";
 import {
   bumpAIEpoch,
   getAIEpoch,
+  readPuterAuthHint,
   readLatestNewsSummary,
   startGlobalAIPrewarm,
   writeLatestNewsSummary,
 } from "@/lib/ai-session";
 import { cn, sentimentColor } from "@/lib/utils";
+import { LLMText } from "@/components/LLMText";
 
 const EVENT_TYPES = ["macro", "earnings", "geopolitical", "sector", "general"];
 const NEWS_SUMMARY_CACHE_PREFIX = "lnz_news_ai_summary_v1";
+const ARTICLE_SUMMARY_CACHE_PREFIX = "lnz_news_article_ai_summary_v1";
 const NEWS_AUTO_REFRESH_MS = 90_000;
 
-const FALLBACK_IMAGES: Record<string, string> = {
-  macro: "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?auto=format&fit=crop&w=1200&q=80",
-  earnings: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1200&q=80",
-  geopolitical: "https://images.unsplash.com/photo-1521295121783-8a321d551ad2?auto=format&fit=crop&w=1200&q=80",
-  sector: "https://images.unsplash.com/photo-1642790106117-e829e14a795f?auto=format&fit=crop&w=1200&q=80",
-  general: "https://images.unsplash.com/photo-1535320903710-d993d3d77d29?auto=format&fit=crop&w=1200&q=80",
+type ArticleSummaryCache = {
+  text: string;
+  model: string;
+  sources: string[];
 };
+
+const FALLBACK_IMAGES: Record<string, string[]> = {
+  macro: [
+    "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?auto=format&fit=crop&w=1200&q=80",
+    "https://images.unsplash.com/photo-1601597111158-2fceff292cdc?auto=format&fit=crop&w=1200&q=80",
+    "https://images.unsplash.com/photo-1463320726281-696a485928c7?auto=format&fit=crop&w=1200&q=80",
+    "https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?auto=format&fit=crop&w=1200&q=80",
+    "https://images.unsplash.com/photo-1518186285589-2f7649de83e0?auto=format&fit=crop&w=1200&q=80",
+  ],
+  earnings: [
+    "https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1200&q=80",
+    "https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1200&q=80",
+    "https://images.unsplash.com/photo-1556155092-490a1ba16284?auto=format&fit=crop&w=1200&q=80",
+    "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=1200&q=80",
+    "https://images.unsplash.com/photo-1462899006636-339e08d1844e?auto=format&fit=crop&w=1200&q=80",
+  ],
+  geopolitical: [
+    "https://images.unsplash.com/photo-1521295121783-8a321d551ad2?auto=format&fit=crop&w=1200&q=80",
+    "https://images.unsplash.com/photo-1495020689067-958852a7765e?auto=format&fit=crop&w=1200&q=80",
+    "https://images.unsplash.com/photo-1532375810709-75b1da00537c?auto=format&fit=crop&w=1200&q=80",
+    "https://images.unsplash.com/photo-1475721027785-f74eccf877e2?auto=format&fit=crop&w=1200&q=80",
+    "https://images.unsplash.com/photo-1579370318443-4f58d6f8ba5c?auto=format&fit=crop&w=1200&q=80",
+  ],
+  sector: [
+    "https://images.unsplash.com/photo-1642790106117-e829e14a795f?auto=format&fit=crop&w=1200&q=80",
+    "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=1200&q=80",
+    "https://images.unsplash.com/photo-1518183214770-9cffbec72538?auto=format&fit=crop&w=1200&q=80",
+    "https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=1200&q=80",
+    "https://images.unsplash.com/photo-1551836022-d5d88e9218df?auto=format&fit=crop&w=1200&q=80",
+  ],
+  general: [
+    "https://images.unsplash.com/photo-1535320903710-d993d3d77d29?auto=format&fit=crop&w=1200&q=80",
+    "https://images.unsplash.com/photo-1488190211105-8b0e65b80b4e?auto=format&fit=crop&w=1200&q=80",
+    "https://images.unsplash.com/photo-1510751007277-36932aac9ebd?auto=format&fit=crop&w=1200&q=80",
+    "https://images.unsplash.com/photo-1495020689067-958852a7765e?auto=format&fit=crop&w=1200&q=80",
+    "https://images.unsplash.com/photo-1461632830798-3adb3034e4c8?auto=format&fit=crop&w=1200&q=80",
+  ],
+};
+
+function eventTypeFor(event: NewsEventImpact): string {
+  return EVENT_TYPES.includes(event.event.event_type) ? event.event.event_type : "general";
+}
+
+function parseUrlHostPath(raw: string | null | undefined): string {
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw);
+    return `${parsed.hostname}${parsed.pathname}`.toLowerCase();
+  } catch {
+    return String(raw).trim().toLowerCase();
+  }
+}
+
+function hashString(input: string): number {
+  let h = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    h = (h * 31 + input.charCodeAt(i)) >>> 0;
+  }
+  return h;
+}
+
+function dedupeKeyForEvent(ev: NewsEventImpact): string {
+  const headline = String(ev.event.headline || "").trim().toLowerCase().replace(/\s+/g, " ");
+  const source = String(ev.event.source || "").trim().toLowerCase();
+  const url = parseUrlHostPath(ev.event.url);
+  return `${headline}::${url || source}::${eventTypeFor(ev)}`;
+}
+
+function dedupeEvents(events: NewsEventImpact[]): NewsEventImpact[] {
+  const seen = new Set<string>();
+  const out: NewsEventImpact[] = [];
+  for (const ev of events) {
+    const key = dedupeKeyForEvent(ev);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(ev);
+  }
+  return out;
+}
 
 function imageFor(event: NewsEventImpact): string {
   const raw = event.event.raw_payload ?? {};
   const fromPayload = typeof raw.image_url === "string" ? raw.image_url : null;
-  return fromPayload || FALLBACK_IMAGES[event.event.event_type] || FALLBACK_IMAGES.general;
+  if (fromPayload) return fromPayload;
+  const eventType = eventTypeFor(event);
+  const pool = FALLBACK_IMAGES[eventType] ?? FALLBACK_IMAGES.general;
+  const idx = hashString(`${event.event.id}:${event.event.headline}:${eventType}`) % pool.length;
+  return pool[idx];
 }
 
 function hoursAgo(iso: string): number {
@@ -52,6 +136,10 @@ function summaryCacheKey(signature: string): string {
   return `${NEWS_SUMMARY_CACHE_PREFIX}:e${getAIEpoch()}:${signature}`;
 }
 
+function articleSummaryCacheKey(eventId: string): string {
+  return `${ARTICLE_SUMMARY_CACHE_PREFIX}:e${getAIEpoch()}:${eventId}`;
+}
+
 function readCachedSummary(signature: string): { text: string; model: string } | null {
   try {
     const raw = window.sessionStorage.getItem(summaryCacheKey(signature));
@@ -72,6 +160,26 @@ function writeCachedSummary(signature: string, text: string, model: string): voi
   }
 }
 
+function readCachedArticleSummary(eventId: string): ArticleSummaryCache | null {
+  try {
+    const raw = window.sessionStorage.getItem(articleSummaryCacheKey(eventId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as ArticleSummaryCache;
+    if (!parsed?.text || !parsed?.model || !Array.isArray(parsed?.sources)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedArticleSummary(eventId: string, cache: ArticleSummaryCache): void {
+  try {
+    window.sessionStorage.setItem(articleSummaryCacheKey(eventId), JSON.stringify(cache));
+  } catch {
+    // Ignore cache failures.
+  }
+}
+
 function ThinkingIndicator({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-2 text-xs font-mono text-muted">
@@ -81,6 +189,80 @@ function ThinkingIndicator({ label }: { label: string }) {
         <span className="h-1.5 w-1.5 rounded-full bg-accent animate-bounce [animation-delay:-0.1s]" />
         <span className="h-1.5 w-1.5 rounded-full bg-accent animate-bounce" />
       </span>
+    </div>
+  );
+}
+
+function ScrollableNewsRail({
+  events,
+  renderItem,
+}: {
+  events: NewsEventImpact[];
+  renderItem: (ev: NewsEventImpact, index: number) => JSX.Element;
+}) {
+  const railRef = useRef<HTMLDivElement | null>(null);
+  const [canLeft, setCanLeft] = useState(false);
+  const [canRight, setCanRight] = useState(false);
+
+  const updateScrollState = useCallback(() => {
+    const el = railRef.current;
+    if (!el) return;
+    setCanLeft(el.scrollLeft > 8);
+    setCanRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 8);
+  }, []);
+
+  useEffect(() => {
+    updateScrollState();
+    const el = railRef.current;
+    if (!el) return;
+
+    const onScroll = () => updateScrollState();
+    el.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(onScroll) : null;
+    observer?.observe(el);
+
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+      observer?.disconnect();
+    };
+  }, [events.length, updateScrollState]);
+
+  const scrollByPage = (direction: -1 | 1) => {
+    const el = railRef.current;
+    if (!el) return;
+    const amount = Math.max(260, Math.floor(el.clientWidth * 0.8));
+    el.scrollBy({ left: amount * direction, behavior: "smooth" });
+  };
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => scrollByPage(-1)}
+        aria-label="Scroll left"
+        className={cn(
+          "absolute left-1 top-1/2 z-20 -translate-y-1/2 rounded-full border border-border bg-[#0E1016]/95 px-2 py-1 text-sm text-gray-200 shadow transition",
+          canLeft ? "opacity-100 hover:border-accent/40 hover:text-white" : "pointer-events-none opacity-0",
+        )}
+      >
+        {"<"}
+      </button>
+      <button
+        type="button"
+        onClick={() => scrollByPage(1)}
+        aria-label="Scroll right"
+        className={cn(
+          "absolute right-1 top-1/2 z-20 -translate-y-1/2 rounded-full border border-border bg-[#0E1016]/95 px-2 py-1 text-sm text-gray-200 shadow transition",
+          canRight ? "opacity-100 hover:border-accent/40 hover:text-white" : "pointer-events-none opacity-0",
+        )}
+      >
+        {">"}
+      </button>
+      <div ref={railRef} className="flex gap-3 overflow-x-auto pb-2 px-9">
+        {events.map((ev, index) => renderItem(ev, index))}
+      </div>
     </div>
   );
 }
@@ -95,11 +277,15 @@ export default function NewsPage() {
   const [minImportance, setMinImportance] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  const [aiEnabled, setAiEnabled] = useState(false);
+  const [aiEnabled, setAiEnabled] = useState(() => readPuterAuthHint());
   const [aiSummary, setAiSummary] = useState("");
   const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
   const [aiSummaryError, setAiSummaryError] = useState<string | null>(null);
   const [aiModel, setAiModel] = useState<string | null>(null);
+  const [activeArticleId, setActiveArticleId] = useState<string | null>(null);
+  const [articleSummaryLoading, setArticleSummaryLoading] = useState(false);
+  const [articleSummaryError, setArticleSummaryError] = useState<string | null>(null);
+  const [articleSummaryCache, setArticleSummaryCache] = useState<Record<string, ArticleSummaryCache>>({});
 
   const refreshAIStatus = useCallback(async () => {
     const status = await getAIStatus().catch(() => null);
@@ -148,9 +334,11 @@ export default function NewsPage() {
     [sorted, minRelevance, minImportance],
   );
 
+  const uniqueFilteredEvents = useMemo(() => dedupeEvents(filteredEvents), [filteredEvents]);
+
   const currentSignature = useMemo(
-    () => visibleEventsSignature(filteredEvents, filterEntity, minRelevance, minImportance),
-    [filteredEvents, filterEntity, minRelevance, minImportance],
+    () => visibleEventsSignature(uniqueFilteredEvents, filterEntity, minRelevance, minImportance),
+    [uniqueFilteredEvents, filterEntity, minRelevance, minImportance],
   );
 
   const generateAiSummary = useCallback(
@@ -254,6 +442,7 @@ export default function NewsPage() {
 
   const handleIngest = async () => {
     setIngesting(true);
+    setArticleSummaryError(null);
     await load(true);
   };
 
@@ -263,6 +452,9 @@ export default function NewsPage() {
     setAiSummaryError(null);
     try {
       bumpAIEpoch();
+      setArticleSummaryCache({});
+      setActiveArticleId(null);
+      setArticleSummaryError(null);
       await startGlobalAIPrewarm(true);
       await refreshAIStatus();
 
@@ -284,9 +476,10 @@ export default function NewsPage() {
     }
   };
 
-  const topPicks = filteredEvents.slice(0, 8);
+  const topPicks = useMemo(() => uniqueFilteredEvents.slice(0, 8), [uniqueFilteredEvents]);
+
   const companySpecific = useMemo(() => {
-    return filteredEvents.filter((ev) => {
+    const scoped = uniqueFilteredEvents.filter((ev) => {
       const entities = new Set((ev.event.entities ?? []).map((x) => String(x).toUpperCase()));
       return ev.impacted_holdings.some((h) => {
         const ticker = String(h.ticker || "").toUpperCase();
@@ -294,21 +487,132 @@ export default function NewsPage() {
         return entities.has(ticker) || reason.includes("direct ticker mention");
       });
     });
-  }, [filteredEvents]);
+    return dedupeEvents(scoped);
+  }, [uniqueFilteredEvents]);
 
   const grouped = useMemo(() => {
     const byType: Record<string, NewsEventImpact[]> = {};
     for (const t of EVENT_TYPES) byType[t] = [];
-    for (const ev of filteredEvents) {
-      const t = EVENT_TYPES.includes(ev.event.event_type) ? ev.event.event_type : "general";
-      byType[t].push(ev);
+    for (const ev of uniqueFilteredEvents) {
+      byType[eventTypeFor(ev)].push(ev);
+    }
+    for (const t of EVENT_TYPES) {
+      byType[t] = dedupeEvents(byType[t] ?? []);
     }
     return byType;
-  }, [filteredEvents]);
+  }, [uniqueFilteredEvents]);
+
+  const activeArticle = useMemo(() => {
+    if (!activeArticleId) return null;
+    return (
+      uniqueFilteredEvents.find((ev) => ev.event.id === activeArticleId) ??
+      sorted.find((ev) => ev.event.id === activeArticleId) ??
+      null
+    );
+  }, [activeArticleId, uniqueFilteredEvents, sorted]);
+
+  const activeArticleSummary = activeArticleId ? articleSummaryCache[activeArticleId] ?? null : null;
+
+  const buildHoldingImpactAppendix = useCallback((ev: NewsEventImpact): string => {
+    if (!ev.impacted_holdings.length) {
+      return "- No direct holding-level impact was detected from this article in the current mapping.";
+    }
+    return ev.impacted_holdings
+      .slice(0, 6)
+      .map((h) => {
+        const direction = h.direction ? String(h.direction).toUpperCase() : "MIXED";
+        const pct = `${Math.round(h.impact_score * 100)}%`;
+        const reason = String(h.reason || "No reason provided.").slice(0, 160);
+        return `- ${h.ticker}: ${direction} (${pct}) - ${reason}`;
+      })
+      .join("\n");
+  }, []);
+
+  const ensureHoldingImpactSection = useCallback(
+    (text: string, ev: NewsEventImpact): string => {
+      if (/how your current holdings may be impacted/i.test(text)) return text;
+      const appendix = buildHoldingImpactAppendix(ev);
+      return `${text.trim()}\n\nHow your current holdings may be impacted\n${appendix}`;
+    },
+    [buildHoldingImpactAppendix],
+  );
+
+  const buildArticlePrompt = useCallback((ev: NewsEventImpact): string => {
+    const compactEvent = {
+      headline: String(ev.event.headline || "").slice(0, 240),
+      source: ev.event.source,
+      captured_at: ev.event.captured_at,
+      event_type: ev.event.event_type,
+      rank_score: Number(ev.rank_score.toFixed(3)),
+      portfolio_impact_score: Number(ev.portfolio_impact_score.toFixed(3)),
+      sentiment_score: ev.event.sentiment_score,
+      volatility_score: ev.event.volatility_score,
+      entities: (ev.event.entities ?? []).slice(0, 10),
+      impacted_holdings: ev.impacted_holdings.slice(0, 8).map((h) => ({
+        ticker: h.ticker,
+        direction: h.direction,
+        impact_score: Number(h.impact_score.toFixed(3)),
+        reason: String(h.reason || "").slice(0, 160),
+      })),
+      article_url: ev.event.url,
+    };
+    const prompt = [
+      "Create a concise institutional brief for this single portfolio-relevant article.",
+      "Use exactly these sections:",
+      "What happened",
+      "Why it matters",
+      "How your current holdings may be impacted",
+      "Actionable watch items (7 days)",
+      "Be specific, data-backed, and cite tickers where relevant.",
+      `Article context JSON:\n${JSON.stringify(compactEvent)}`,
+    ].join("\n");
+    return prompt.length > 1900 ? `${prompt.slice(0, 1890)}...` : prompt;
+  }, []);
+
+  const handleGenerateArticleSummary = useCallback(
+    async (ev: NewsEventImpact) => {
+      const eventId = ev.event.id;
+      setActiveArticleId(eventId);
+      setArticleSummaryError(null);
+
+      if (!aiEnabled) {
+        setArticleSummaryError("AI API is disabled. Add your API key on backend and restart.");
+        return;
+      }
+
+      const memoryCached = articleSummaryCache[eventId];
+      if (memoryCached) return;
+
+      const diskCached = readCachedArticleSummary(eventId);
+      if (diskCached) {
+        setArticleSummaryCache((prev) => ({ ...prev, [eventId]: diskCached }));
+        return;
+      }
+
+      setArticleSummaryLoading(true);
+      try {
+        const payload = await chatAI(buildArticlePrompt(ev), []);
+        const summaryText = ensureHoldingImpactSection(payload.reply || "No AI summary generated.", ev);
+        const next: ArticleSummaryCache = {
+          text: summaryText,
+          model: payload.model || "unknown",
+          sources: Array.isArray(payload.sources) ? payload.sources.slice(0, 20) : [],
+        };
+        setArticleSummaryCache((prev) => ({ ...prev, [eventId]: next }));
+        writeCachedArticleSummary(eventId, next);
+      } catch (e: unknown) {
+        setArticleSummaryError(e instanceof Error ? e.message : "Failed to generate article AI summary.");
+      } finally {
+        setArticleSummaryLoading(false);
+      }
+    },
+    [aiEnabled, articleSummaryCache, buildArticlePrompt, ensureHoldingImpactSection],
+  );
 
   const renderCard = (ev: NewsEventImpact, large = false) => {
     const img = imageFor(ev);
     const isNew = hoursAgo(ev.event.captured_at) < 12;
+    const isActive = activeArticleId === ev.event.id;
     const impactedLine =
       ev.impacted_holdings.length > 0
         ? ev.impacted_holdings
@@ -322,6 +626,7 @@ export default function NewsPage() {
         key={ev.event.id}
         className={cn(
           "relative shrink-0 overflow-hidden rounded-xl border border-border bg-panel",
+          isActive && "ring-1 ring-accent/60 border-accent/50",
           large ? "w-[360px] h-[230px]" : "w-[290px] h-[190px]",
         )}
       >
@@ -353,16 +658,30 @@ export default function NewsPage() {
             <span className="text-accent uppercase">{ev.event.event_type}</span>
           </div>
           <p className="text-[10px] font-mono text-yellow-200 truncate">Most impacted: {impactedLine}</p>
-          {ev.event.url && (
-            <a
-              href={ev.event.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-block text-xs font-mono text-accent hover:underline"
+          <div className="flex items-center gap-2 pt-0.5">
+            <button
+              type="button"
+              onClick={() => void handleGenerateArticleSummary(ev)}
+              className={cn(
+                "text-[11px] font-mono rounded border px-2 py-0.5 transition-colors",
+                isActive
+                  ? "border-accent/60 bg-accent/15 text-accent"
+                  : "border-border bg-black/45 text-gray-100 hover:border-accent/40 hover:text-accent",
+              )}
             >
-              Open article
-            </a>
-          )}
+              {isActive && articleSummaryLoading ? "Generating..." : "AI Summary"}
+            </button>
+            {ev.event.url && (
+              <a
+                href={ev.event.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block text-xs font-mono text-accent hover:underline"
+              >
+                Open article
+              </a>
+            )}
+          </div>
         </div>
       </article>
     );
@@ -421,7 +740,7 @@ export default function NewsPage() {
           />
         </label>
         <span className="text-xs font-mono text-muted">
-          Showing {filteredEvents.length} of {events.length} impact-ranked articles
+          Showing {uniqueFilteredEvents.length} unique of {events.length} impact-ranked articles
         </span>
       </div>
 
@@ -474,7 +793,7 @@ export default function NewsPage() {
         ) : aiSummary ? (
           <>
             <p className="text-[11px] font-mono text-muted">Model: {aiModel ?? "unknown"}</p>
-            <pre className="text-xs text-gray-200 whitespace-pre-wrap font-sans leading-5">{aiSummary}</pre>
+            <LLMText text={aiSummary} lineClassName="text-xs text-gray-200 leading-5" />
           </>
         ) : (
           <p className="text-xs text-muted">No AI summary generated yet.</p>
@@ -482,12 +801,62 @@ export default function NewsPage() {
         {aiSummaryError && <p className="text-xs font-mono text-negative">{aiSummaryError}</p>}
       </section>
 
+      <section className="bg-panel border border-border rounded-lg p-4 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-gray-100">Article AI Brief</h2>
+          {activeArticle && (
+            <p className="text-[11px] font-mono text-muted">
+              {activeArticle.event.source} | {new Date(activeArticle.event.captured_at).toLocaleString()}
+            </p>
+          )}
+        </div>
+        {!aiEnabled ? (
+          <p className="text-xs text-muted">AI API is disabled. Add your API key on backend and restart.</p>
+        ) : !activeArticle ? (
+          <p className="text-xs text-muted">Select AI Summary on a news card to generate an article-level brief.</p>
+        ) : articleSummaryLoading && !activeArticleSummary ? (
+          <ThinkingIndicator label="Thinking through article and portfolio context..." />
+        ) : activeArticleSummary ? (
+          <>
+            <p className="text-[11px] font-mono text-muted">Model: {activeArticleSummary.model}</p>
+            <LLMText text={activeArticleSummary.text} lineClassName="text-xs text-gray-200 leading-5" />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <div>
+                <h3 className="text-xs font-mono uppercase tracking-wider text-muted mb-2">Holdings Impact Map</h3>
+                <LLMText
+                  text={buildHoldingImpactAppendix(activeArticle)}
+                  lineClassName="text-xs text-gray-300 leading-5"
+                />
+              </div>
+              <div>
+                <h3 className="text-xs font-mono uppercase tracking-wider text-muted mb-2">Evidence Sources</h3>
+                <div className="max-h-56 overflow-y-auto rounded-md border border-border bg-[#101013] p-3">
+                  <LLMText
+                    text={
+                      activeArticleSummary.sources.length > 0
+                        ? activeArticleSummary.sources.map((s) => `- ${s}`).join("\n")
+                        : activeArticle.event.url
+                          ? `- ${activeArticle.event.source}: ${activeArticle.event.headline} | ${activeArticle.event.url}`
+                          : `- ${activeArticle.event.source}: ${activeArticle.event.headline}`
+                    }
+                    lineClassName="text-xs text-gray-300 leading-5"
+                  />
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <p className="text-xs text-muted">No article AI brief generated yet.</p>
+        )}
+        {articleSummaryError && <p className="text-xs font-mono text-negative">{articleSummaryError}</p>}
+      </section>
+
       {loading ? (
         <div className="space-y-3">
           <div className="h-40 bg-panel border border-border rounded-lg animate-pulse" />
           <div className="h-40 bg-panel border border-border rounded-lg animate-pulse" />
         </div>
-      ) : filteredEvents.length === 0 ? (
+      ) : uniqueFilteredEvents.length === 0 ? (
         <div className="text-center py-12">
           <p className="text-muted font-mono text-sm">
             No news matched the relevance/importance filters. Lower thresholds or refresh news.
@@ -498,13 +867,16 @@ export default function NewsPage() {
           {companySpecific.length > 0 && (
             <section className="space-y-3">
               <h2 className="text-sm font-semibold text-gray-100">Company-Specific to Your Holdings</h2>
-              <div className="flex gap-3 overflow-x-auto pb-2">{companySpecific.slice(0, 12).map((ev) => renderCard(ev, false))}</div>
+              <ScrollableNewsRail
+                events={companySpecific.slice(0, 12)}
+                renderItem={(ev) => renderCard(ev, false)}
+              />
             </section>
           )}
 
           <section className="space-y-3">
             <h2 className="text-sm font-semibold text-gray-100">Top Portfolio-Impact Picks</h2>
-            <div className="flex gap-3 overflow-x-auto pb-2">{topPicks.map((ev) => renderCard(ev, true))}</div>
+            <ScrollableNewsRail events={topPicks} renderItem={(ev) => renderCard(ev, true)} />
           </section>
 
           {EVENT_TYPES.map((type) => {
@@ -513,7 +885,7 @@ export default function NewsPage() {
             return (
               <section key={type} className="space-y-3">
                 <h2 className="text-sm font-semibold text-gray-100 capitalize">{type}</h2>
-                <div className="flex gap-3 overflow-x-auto pb-2">{list.map((ev) => renderCard(ev, false))}</div>
+                <ScrollableNewsRail events={list} renderItem={(ev) => renderCard(ev, false)} />
               </section>
             );
           })}

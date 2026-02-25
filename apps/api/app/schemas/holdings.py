@@ -62,6 +62,12 @@ class HoldingLive(BaseModel):
     current_price: Optional[float]
     day_change: Optional[float]
     day_change_pct: Optional[float]
+    week_change: Optional[float] = None
+    week_change_pct: Optional[float] = None
+    month_change: Optional[float] = None
+    month_change_pct: Optional[float] = None
+    year_change: Optional[float] = None
+    year_change_pct: Optional[float] = None
 
     # Computed fields
     total_cost_basis: float
@@ -84,8 +90,21 @@ class HoldingsSnapshot(BaseModel):
     total_unrealized_pnl_pct: Optional[float]
     total_day_change: Optional[float]
     total_day_change_pct: Optional[float]
+    total_week_change: Optional[float] = None
+    total_week_change_pct: Optional[float] = None
+    total_month_change: Optional[float] = None
+    total_month_change_pct: Optional[float] = None
+    total_year_change: Optional[float] = None
+    total_year_change_pct: Optional[float] = None
 
     sharpe_30d: Optional[float]
     sortino_30d: Optional[float]
 
     as_of: str  # ISO UTC timestamp of the price fetch
+
+
+class TickerSuggestion(BaseModel):
+    symbol: str
+    name: Optional[str] = None
+    exchange: Optional[str] = None
+    quote_type: Optional[str] = None

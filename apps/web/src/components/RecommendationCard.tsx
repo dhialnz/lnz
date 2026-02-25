@@ -1,6 +1,7 @@
 "use client";
 
 import type { Recommendation } from "@/lib/types";
+import { LLMText } from "@/components/LLMText";
 import { cn, riskColor } from "@/lib/utils";
 
 interface RecommendationCardProps {
@@ -9,11 +10,11 @@ interface RecommendationCardProps {
 }
 
 const CATEGORY_ICONS: Record<string, string> = {
-  Deployment: "◈",
-  "Profit Taking": "◆",
-  "Risk Control": "◉",
-  "Monthly Mode": "◎",
-  "News/Macro": "◍",
+  Deployment: "\u25C7",
+  "Profit Taking": "\u25C6",
+  "Risk Control": "\u25C9",
+  "Monthly Mode": "\u25CE",
+  "News/Macro": "\u25CD",
 };
 
 export function RecommendationCard({ rec, onClick }: RecommendationCardProps) {
@@ -24,9 +25,7 @@ export function RecommendationCard({ rec, onClick }: RecommendationCardProps) {
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-muted font-mono text-sm flex-shrink-0">
-            {CATEGORY_ICONS[rec.category] ?? "◌"}
-          </span>
+          <span className="text-muted font-mono text-sm flex-shrink-0">{CATEGORY_ICONS[rec.category] ?? "\u25CC"}</span>
           <span className="font-medium text-sm text-gray-100 truncate group-hover:text-accent transition-colors">
             {rec.title}
           </span>
@@ -45,23 +44,18 @@ export function RecommendationCard({ rec, onClick }: RecommendationCardProps) {
           >
             {rec.risk_level}
           </span>
-          <span className="text-xs font-mono text-muted">
-            {(rec.confidence * 100).toFixed(0)}%
-          </span>
+          <span className="text-xs font-mono text-muted">{(rec.confidence * 100).toFixed(0)}%</span>
         </div>
       </div>
 
-      <p className="text-xs text-muted mt-2 line-clamp-2">{rec.explanation}</p>
+      <div className="mt-2 max-h-10 overflow-hidden">
+        <LLMText text={rec.explanation} className="space-y-0" lineClassName="text-xs text-muted leading-5" />
+      </div>
 
       <div className="flex items-center gap-3 mt-3">
-        <span className="text-xs font-mono text-muted/70 bg-border/50 rounded px-1.5 py-0.5">
-          {rec.category}
-        </span>
+        <span className="text-xs font-mono text-muted/70 bg-border/50 rounded px-1.5 py-0.5">{rec.category}</span>
         {rec.triggers.slice(0, 1).map((t, i) => (
-          <span
-            key={i}
-            className="text-xs font-mono text-muted/60 truncate"
-          >
+          <span key={i} className="text-xs font-mono text-muted/60 truncate">
             {t}
           </span>
         ))}

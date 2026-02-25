@@ -185,6 +185,12 @@ export interface HoldingLive {
   current_price: number | null;
   day_change: number | null;
   day_change_pct: number | null;
+  week_change: number | null;
+  week_change_pct: number | null;
+  month_change: number | null;
+  month_change_pct: number | null;
+  year_change: number | null;
+  year_change_pct: number | null;
 
   total_cost_basis: number;
   total_value: number | null;
@@ -203,9 +209,22 @@ export interface HoldingsSnapshot {
   total_unrealized_pnl_pct: number | null;
   total_day_change: number | null;
   total_day_change_pct: number | null;
+  total_week_change: number | null;
+  total_week_change_pct: number | null;
+  total_month_change: number | null;
+  total_month_change_pct: number | null;
+  total_year_change: number | null;
+  total_year_change_pct: number | null;
   sharpe_30d: number | null;
   sortino_30d: number | null;
   as_of: string;
+}
+
+export interface TickerSuggestion {
+  symbol: string;
+  name: string | null;
+  exchange: string | null;
+  quote_type: string | null;
 }
 
 export interface HoldingIn {
@@ -256,12 +275,33 @@ export interface RiskQuizRecommendation {
 
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ AI Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
+export type SuggestionSignalType =
+  | "momentum"
+  | "fundamental"
+  | "news"
+  | "regime"
+  | "concentration"
+  | "diversification"
+  | "stop_loss"
+  | "profit_taking"
+  | "steady";
+
+export type SuggestionTimeHorizon = "short" | "medium" | "long";
+
 export interface AISuggestion {
   action: "buy" | "hold" | "sell";
   ticker: string;
   confidence: number;
   rationale: string;
   size_hint: string | null;
+  /** Signal category that triggered this suggestion */
+  signal_type?: SuggestionSignalType;
+  /** Investment time horizon */
+  time_horizon?: SuggestionTimeHorizon;
+  /** Risk score 1 (low) – 5 (critical) */
+  risk_score?: number;
+  /** Specific metric, news headline, or event that triggered the signal */
+  catalyst?: string | null;
 }
 
 export interface PortfolioInsights {
@@ -306,5 +346,16 @@ export interface AINewsSummary {
   used_ai: boolean;
   model: string;
   summary: string;
+}
+
+// ─── Market Sentiment ────────────────────────────────────────────────────────
+
+export interface FearGreedData {
+  score: number;
+  rating: string;
+  previous_close: number | null;
+  previous_1_week: number | null;
+  previous_1_month: number | null;
+  timestamp: string | null;
 }
 

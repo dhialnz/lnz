@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -95,4 +95,18 @@ body {
 
 .hf-pulse-dot {
   animation: glowPulse 1.8s ease-out infinite;
+}
+
+.llm-copy {
+  font-family: "IBM Plex Sans", "Inter", sans-serif;
+  letter-spacing: 0.002em;
+}
+
+.llm-copy strong {
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.llm-mono {
+  font-family: "IBM Plex Mono", "DM Mono", monospace;
 }

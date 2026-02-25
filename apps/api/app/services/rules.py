@@ -68,7 +68,8 @@ def rule_deploy_tranche_1(
 
     if None in (a4_0, a4_1, a4_2):
         return None
-    if not (a4_0 > a4_1 > a4_2):  # type: ignore[operator]
+    # Treat stable-to-improving alpha as Recovery confirmation.
+    if not (a4_0 >= a4_1 >= a4_2):  # type: ignore[operator]
         return None
 
     pct = int(thresholds.get("deploy_tranche_1", 0.30) * 100)

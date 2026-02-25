@@ -12,6 +12,22 @@ class AISuggestionOut(BaseModel):
     confidence: float = Field(..., ge=0.0, le=1.0)
     rationale: str
     size_hint: Optional[str] = None
+    signal_type: Optional[
+        Literal[
+            "momentum",
+            "fundamental",
+            "news",
+            "regime",
+            "concentration",
+            "diversification",
+            "stop_loss",
+            "profit_taking",
+            "steady",
+        ]
+    ] = None
+    time_horizon: Optional[Literal["short", "medium", "long"]] = None
+    risk_score: Optional[int] = Field(default=None, ge=1, le=5)
+    catalyst: Optional[str] = None
 
 
 class PortfolioInsightsOut(BaseModel):

@@ -1,28 +1,41 @@
-version: "3.9"
+# ─────────────────────────────────────────────────────────────────────────────
+# LNZ Portfolio Analytics — Docker Compose (Development)
+#
+# For production:
+#   1. Remove `--reload` from api command
+#   2. Replace source volume mounts with COPY-based Docker images
+#   3. Use strong random passwords (not the defaults below)
+#   4. Add HTTPS via a reverse proxy (nginx/caddy/traefik)
+# ─────────────────────────────────────────────────────────────────────────────
 
 services:
   postgres:
     image: postgres:15-alpine
+    env_file:
+      - .env
     environment:
-      POSTGRES_USER: lnz
-      POSTGRES_PASSWORD: lnz_dev_password
-      POSTGRES_DB: lnz
+      POSTGRES_USER: ${POSTGRES_USER:-lnz}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lnz_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-lnz_db}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U lnz"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lnz}"]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   api:
     build:
       context: ./apps/api
       dockerfile: Dockerfile
+    env_file:
+      - .env
     environment:
-      DATABASE_URL: postgresql://lnz:lnz_dev_password@postgres:5432/lnz
+      DATABASE_URL: postgresql://${POSTGRES_USER:-lnz}:${POSTGRES_PASSWORD:-lnz_dev_password}@postgres:5432/${POSTGRES_DB:-lnz_db}
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
       FILE_ENCRYPTION_KEY: ${FILE_ENCRYPTION_KEY:-dev-file-key-32-bytes-exactly!!}
       MARKET_DATA_PROVIDER: ${MARKET_DATA_PROVIDER:-mock}
@@ -31,7 +44,7 @@ services:
       MARKET_DATA_API_KEY: ${MARKET_DATA_API_KEY:-}
       NEWS_BASE_URL: ${NEWS_BASE_URL:-}
       NEWS_API_KEY: ${NEWS_API_KEY:-}
-      AI_PROVIDER: ${LNZ_AI_PROVIDER:-openai}
+      AI_PROVIDER: ${LNZ_AI_PROVIDER:-deterministic}
       GEMINI_API_KEY: ${LNZ_GEMINI_API_KEY:-}
       GEMINI_MODEL: ${LNZ_GEMINI_MODEL:-gemini-2.5-flash}
       GEMINI_BASE_URL: ${LNZ_GEMINI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai}
@@ -52,12 +65,22 @@ services:
     volumes:
       - ./apps/api:/app
       - uploads_data:/app/uploads
+    # NOTE: --reload is for development only. Remove for production.
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/v1/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
 
   web:
     build:
       context: ./apps/web
       dockerfile: Dockerfile
+    env_file:
+      - .env
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
     ports:
@@ -69,6 +92,7 @@ services:
       - /app/node_modules
       - /app/.next
     command: sh -c "rm -rf /app/.next/* && npm run dev"
+    restart: unless-stopped
 
 volumes:
   postgres_data:

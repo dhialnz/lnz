@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getAIDashboardRecommendations,
   getAIStatus,
+  getFearAndGreed,
   getHoldings,
   getPortfolioNewsImpact,
   getRecommendations,
@@ -14,6 +15,8 @@ import {
   runRecommendations,
 } from "@/lib/api";
 import type {
+  AIStatus,
+  FearGreedData,
   HoldingsSnapshot,
   NewsPortfolioImpact,
   PortfolioInsights,
@@ -25,17 +28,18 @@ import type {
 import { MetricCard } from "@/components/MetricCard";
 import { RecommendationCard } from "@/components/RecommendationCard";
 import { RecommendationModal } from "@/components/RecommendationModal";
+import { LLMText } from "@/components/LLMText";
 import { ValueChart } from "@/components/charts/ValueChart";
 import { DrawdownChart } from "@/components/charts/DrawdownChart";
 import { AlphaChart } from "@/components/charts/AlphaChart";
 import { VolatilityChart } from "@/components/charts/VolatilityChart";
 import {
-  bumpAIEpoch,
   getAIEpoch,
+  readAIPrewarmState,
   readLatestAssistantInsights,
   readLatestDashboardRecommendations,
   readLatestNewsSummary,
-  startGlobalAIPrewarm,
+  subscribeAIPrewarm,
   writeLatestDashboardRecommendations,
 } from "@/lib/ai-session";
 import { useCurrency } from "@/lib/currency";
@@ -84,6 +88,26 @@ const NEGATIVE_NEWS_WORDS = [
 
 type RecommendationSource = "Rules" | "AI";
 type DashboardChartId = "value" | "drawdown" | "alpha" | "volatility";
+type RiskPressureLevel = "Low" | "Moderate" | "High" | "Critical";
+type AIRiskBoardRow = {
+  id: string;
+  label: string;
+  score: number;
+  level: RiskPressureLevel;
+  detail: string;
+  catalyst: string;
+};
+type AIExecutionBucket = "Act Now" | "This Week" | "Monitor";
+type AIExecutionRow = {
+  id: string;
+  ticker: string;
+  action: "BUY" | "TRIM" | "HOLD";
+  urgency: number;
+  bucket: AIExecutionBucket;
+  thesis: string;
+  context: string;
+  source: string;
+};
 
 const DASHBOARD_CHARTS: Array<{ id: DashboardChartId; title: string; subtitle: string }> = [
   {
@@ -107,6 +131,35 @@ const DASHBOARD_CHARTS: Array<{ id: DashboardChartId; title: string; subtitle: s
     subtitle: "Portfolio volatility vs threshold budget.",
   },
 ];
+
+function emptyHoldingsSnapshot(): HoldingsSnapshot {
+  return {
+    holdings: [],
+    total_cost_basis: 0,
+    total_value: null,
+    total_unrealized_pnl: null,
+    total_unrealized_pnl_pct: null,
+    total_day_change: null,
+    total_day_change_pct: null,
+    total_week_change: null,
+    total_week_change_pct: null,
+    total_month_change: null,
+    total_month_change_pct: null,
+    total_year_change: null,
+    total_year_change_pct: null,
+    sharpe_30d: null,
+    sortino_30d: null,
+    as_of: new Date().toISOString(),
+  };
+}
+
+function emptyNewsImpact(): NewsPortfolioImpact {
+  return {
+    generated_at: new Date().toISOString(),
+    events: [],
+    top_impacted_holdings: [],
+  };
+}
 
 interface WeeklyAIContext {
   summary: {
@@ -346,6 +399,29 @@ function coerceRecommendations(raw: Record<string, unknown>): Recommendation[] {
   return out.slice(0, 10);
 }
 
+function fgColor(score: number): string {
+  if (score < 25) return "text-negative";
+  if (score < 45) return "text-caution";
+  if (score < 56) return "text-muted";
+  if (score < 76) return "text-positive";
+  return "text-positive";
+}
+
+function fgBarColor(score: number): string {
+  if (score < 25) return "bg-negative/70";
+  if (score < 45) return "bg-[#F97316]/70";
+  if (score < 56) return "bg-neutral/40";
+  if (score < 76) return "bg-positive/60";
+  return "bg-positive/80";
+}
+
+function fgDelta(current: number, previous: number | null): string | null {
+  if (previous == null) return null;
+  const d = current - previous;
+  if (Math.abs(d) < 0.5) return null;
+  return (d > 0 ? "+" : "") + d.toFixed(1);
+}
+
 function ThinkingIndicator({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-2 text-xs font-mono text-muted">
@@ -364,9 +440,41 @@ function extractTickerCandidates(text: string): string[] {
   return matches.filter((token) => !TICKER_STOPWORDS.has(token));
 }
 
+function recommendationIntent(rec: Recommendation): "buy" | "sell" | "hold" | "neutral" {
+  const corpus = [rec.title, rec.explanation, ...rec.actions, ...rec.triggers].join(" ").toLowerCase();
+  if (/\b(sell|trim|reduce|exit|underweight)\b/.test(corpus)) return "sell";
+  if (/\b(buy|add|accumulate|initiate|overweight|long)\b/.test(corpus)) return "buy";
+  if (/\b(hold|maintain|keep)\b/.test(corpus)) return "hold";
+  return "neutral";
+}
+
+function metricNumber(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function recommendationPrimaryTicker(rec: Recommendation): string | null {
+  const metrics = rec.supporting_metrics ?? {};
+  const validated = typeof metrics.validated_ticker === "string" ? metrics.validated_ticker.trim().toUpperCase() : "";
+  if (validated) return validated;
+  const fromTitle = extractTickerCandidates(rec.title)[0];
+  return fromTitle ?? null;
+}
+
 function keywordScore(text: string, keywords: string[]): number {
   const lower = text.toLowerCase();
   return keywords.reduce((acc, word) => acc + (lower.includes(word) ? 1 : 0), 0);
+}
+
+function clampScore(value: number, min = 0, max = 100): number {
+  return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+function pressureLevel(score: number): RiskPressureLevel {
+  if (score >= 85) return "Critical";
+  if (score >= 67) return "High";
+  if (score >= 40) return "Moderate";
+  return "Low";
 }
 
 export default function DashboardPage() {
@@ -385,6 +493,7 @@ export default function DashboardPage() {
   const [runningRules, setRunningRules] = useState(false);
   const [holdingsSnapshot, setHoldingsSnapshot] = useState<HoldingsSnapshot | null>(null);
   const [newsImpact, setNewsImpact] = useState<NewsPortfolioImpact | null>(null);
+  const [fearGreed, setFearGreed] = useState<FearGreedData | null>(null);
 
   const [aiStatusReady, setAiStatusReady] = useState(false);
   const [aiEnabled, setAiEnabled] = useState(false);
@@ -392,6 +501,7 @@ export default function DashboardPage() {
   const [aiModel, setAiModel] = useState<string | null>(null);
   const [aiProvider, setAiProvider] = useState<string>("deterministic");
   const [aiError, setAiError] = useState<string | null>(null);
+  const [aiPrewarmStarted, setAiPrewarmStarted] = useState(() => readAIPrewarmState().started);
 
   const [aiContext, setAiContext] = useState<WeeklyAIContext | null>(null);
   const [latestDashboardSummary, setLatestDashboardSummary] = useState<{
@@ -404,24 +514,38 @@ export default function DashboardPage() {
   >(null);
   const [chartIndex, setChartIndex] = useState(0);
   const chartWheelLock = useRef(false);
+  const loadRequestRef = useRef(0);
 
   useEffect(() => {
     const syncCaches = () => {
       setLatestDashboardSummary(readLatestDashboardRecommendations());
       setLatestNewsSummary(readLatestNewsSummary());
       setLatestAssistantSummary(readLatestAssistantInsights());
+      setAiPrewarmStarted(readAIPrewarmState().started);
     };
     syncCaches();
+    const unsubscribe = subscribeAIPrewarm((state) => {
+      setAiPrewarmStarted(state.started);
+      setLatestDashboardSummary(readLatestDashboardRecommendations());
+      setLatestNewsSummary(readLatestNewsSummary());
+      setLatestAssistantSummary(readLatestAssistantInsights());
+      if (!state.started) {
+        setRecs([]);
+        setRecSource("AI");
+        setAiModel(null);
+        setAiError(null);
+        setSelectedRec(null);
+      }
+    });
     const id = window.setInterval(syncCaches, 1200);
-    return () => window.clearInterval(id);
+    return () => {
+      window.clearInterval(id);
+      unsubscribe();
+    };
   }, []);
-  useEffect(() => {
-    if (aiEnabled) void startGlobalAIPrewarm();
-  }, [aiEnabled]);
-
   const modeLabel = useMemo(() => {
     if (!aiStatusReady) return "Checking AI API status...";
-    if (!aiEnabled) return "AI disabled - add OPENAI_API_KEY on backend";
+    if (!aiEnabled) return "AI status unavailable";
     return `${aiProvider} (${aiModel ?? DEFAULT_RECOMMENDER_MODEL})`;
   }, [aiStatusReady, aiEnabled, aiModel, aiProvider]);
 
@@ -446,11 +570,6 @@ export default function DashboardPage() {
           return;
         }
       }
-      if (!aiEnabled) {
-        setAiError("AI API is disabled. Add OPENAI_API_KEY to backend and restart.");
-        return;
-      }
-
       setAiGenerating(true);
       setAiError(null);
       try {
@@ -479,51 +598,75 @@ export default function DashboardPage() {
   );
 
   const load = useCallback(async () => {
+    const requestId = ++loadRequestRef.current;
     setLoading(true);
     setError(null);
     setAiError(null);
+    setAiStatusReady(false);
+
+    const pause = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+    const fetchCore = async () =>
+      Promise.all([getSummary(), getSeries(), getRecommendations(), getRulebook()]);
 
     try {
-      const [sum, ser, recommendations, rb, holdingsSnapshot, newsImpact] = await Promise.all([
-        getSummary(),
-        getSeries(),
-        getRecommendations(),
-        getRulebook(),
-        getHoldings(),
-        getPortfolioNewsImpact({ limit: 60, refresh: false }),
-      ]);
+      let core: Awaited<ReturnType<typeof fetchCore>>;
+      try {
+        core = await fetchCore();
+      } catch {
+        // One immediate retry resolves transient startup/cold-path failures after refresh.
+        await pause(450);
+        core = await fetchCore();
+      }
 
+      if (requestId !== loadRequestRef.current) return;
+
+      const [sum, ser, recommendations, rb] = core;
       setSummary(sum);
       setSeries(ser);
       setRulebook(rb);
       setRuleRecs(recommendations);
       setRecs(recommendations);
       setRecSource("Rules");
-      setHoldingsSnapshot(holdingsSnapshot);
-      setNewsImpact(newsImpact);
+      setLoading(false);
 
-      const context = buildAIContext(sum, ser, rb, holdingsSnapshot, newsImpact);
-      setAiContext(context);
+      void (async () => {
+        const [holdingsRes, newsRes, statusRes, fgRes] = await Promise.allSettled([
+          getHoldings(),
+          getPortfolioNewsImpact({ limit: 60, refresh: false }),
+          getAIStatus(),
+          getFearAndGreed(),
+        ]);
 
-      const status = await getAIStatus().catch(() => null);
-      const signedIn = Boolean(status?.ai_enabled);
-      setAiStatusReady(true);
-      setAiEnabled(signedIn);
-      setAiProvider(status?.provider ?? "deterministic");
+        if (requestId !== loadRequestRef.current) return;
 
-      if (signedIn) {
-        void startGlobalAIPrewarm();
-        void generateAIRecommendations(context, false);
-      }
+        const holdingsData =
+          holdingsRes.status === "fulfilled" ? holdingsRes.value : emptyHoldingsSnapshot();
+        const newsData = newsRes.status === "fulfilled" ? newsRes.value : emptyNewsImpact();
+        const status: AIStatus | null = statusRes.status === "fulfilled" ? statusRes.value : null;
+        if (fgRes.status === "fulfilled") setFearGreed(fgRes.value);
+
+        setHoldingsSnapshot(holdingsData);
+        setNewsImpact(newsData);
+
+        const context = buildAIContext(sum, ser, rb, holdingsData, newsData);
+        setAiContext(context);
+
+        // If status probe is transiently unavailable, proceed optimistically and let AI endpoint decide.
+        const signedIn = status ? Boolean(status.ai_enabled) : true;
+        setAiStatusReady(true);
+        setAiEnabled(signedIn);
+        setAiProvider(status?.provider ?? "unknown");
+        if (signedIn) void generateAIRecommendations(context, false);
+      })();
     } catch (err) {
+      if (requestId !== loadRequestRef.current) return;
       setError(err instanceof Error ? err.message : "Failed to load dashboard");
-    } finally {
       setLoading(false);
     }
   }, [generateAIRecommendations]);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   const handleRunRules = async () => {
@@ -546,23 +689,9 @@ export default function DashboardPage() {
     setAiGenerating(true);
     setAiError(null);
     try {
-      bumpAIEpoch();
-      await startGlobalAIPrewarm(true);
-
-      const latestDashboard = readLatestDashboardRecommendations();
-      if (latestDashboard) {
-        setRecs(latestDashboard.recommendations);
-        setRecSource("AI");
-        setAiModel(latestDashboard.model);
-        setLatestDashboardSummary(latestDashboard);
-      } else {
-        await generateAIRecommendations(aiContext, true);
-      }
-
-      setLatestNewsSummary(readLatestNewsSummary());
-      setLatestAssistantSummary(readLatestAssistantInsights());
+      await generateAIRecommendations(aiContext, true);
     } catch (e: unknown) {
-      setAiError(e instanceof Error ? e.message : "Failed to refresh all AI summaries.");
+      setAiError(e instanceof Error ? e.message : "Failed to refresh dashboard AI recommendations.");
     } finally {
       setAiGenerating(false);
     }
@@ -644,28 +773,6 @@ export default function DashboardPage() {
     running_peak: r.running_peak != null ? (fromCad(r.running_peak) ?? r.running_peak) : null,
   }));
 
-  const baseImpactRows =
-    newsImpact?.top_impacted_holdings?.slice(0, 5).map((row) => ({
-      ticker: row.ticker,
-      reason: row.reason,
-      conviction: Math.max(18, Math.min(95, Math.round(row.impact_score * 100))),
-      direction: row.direction,
-      source: "News Model",
-    })) ?? [];
-
-  const catalystRows =
-    newsImpact?.events?.slice(0, 3).map((event) => ({
-      headline: event.event.headline,
-      ticker: event.impacted_holdings[0]?.ticker ?? "MKT",
-      impact: event.portfolio_impact_score,
-      direction:
-        event.net_sentiment_impact == null
-          ? "mixed"
-          : event.net_sentiment_impact > 0
-            ? "positive"
-            : "negative",
-    })) ?? [];
-
   const tapeRows =
     holdingsSnapshot?.holdings
       .slice()
@@ -679,6 +786,8 @@ export default function DashboardPage() {
   const allAISummariesReady = Boolean(
     aiEnabled && latestDashboardSummary && latestNewsSummary && latestAssistantSummary,
   );
+  const aiSummariesStarted = Boolean(aiEnabled && aiPrewarmStarted);
+  const aiPipelineReady = Boolean(aiSummariesStarted && allAISummariesReady);
   const aiSummaryRecommendationSet = latestDashboardSummary?.recommendations ?? [];
   const aiInsights = latestAssistantSummary;
   const newsSummaryText = latestNewsSummary?.text ?? "";
@@ -786,7 +895,10 @@ export default function DashboardPage() {
     }
   }
 
-  const holdingsTickerSet = new Set((holdingsSnapshot?.holdings ?? []).map((h) => h.ticker.toUpperCase()));
+  const holdingsByTicker = new Map(
+    (holdingsSnapshot?.holdings ?? []).map((holding) => [holding.ticker.toUpperCase(), holding]),
+  );
+  const holdingsTickerSet = new Set(holdingsByTicker.keys());
   const aiHoldingImpactRows = Array.from(signalMap.entries())
     .filter(([ticker]) => holdingsTickerSet.has(ticker))
     .map(([ticker, meta]) => {
@@ -803,9 +915,7 @@ export default function DashboardPage() {
       };
     })
     .sort((a, b) => b.conviction - a.conviction)
-    .slice(0, 5);
-
-  const impactRows = allAISummariesReady ? aiHoldingImpactRows : baseImpactRows;
+    .slice(0, 8);
 
   const drawdownClass = summary.drawdown < 0 ? "text-negative" : "text-positive";
   const drawdownSubtitleParts = [
@@ -814,32 +924,200 @@ export default function DashboardPage() {
   ].filter(Boolean);
   const drawdownSubtitle = drawdownSubtitleParts.length > 0 ? drawdownSubtitleParts.join(" • ") : undefined;
 
-  const aiSignal =
-    allAISummariesReady && aiSummaryRecommendationSet.length > 0
-      ? aiSummaryRecommendationSet[0].explanation
-      : recSource === "AI" && recs.length > 0
-        ? recs[0].explanation
-      : "Tilt into quality growth, trim cyclical beta if macro volatility accelerates.";
+  const recommendationRows = aiPipelineReady
+    ? aiSummaryRecommendationSet.length > 0
+      ? aiSummaryRecommendationSet
+      : recs
+    : [];
 
-  const signalChips = impactRows.slice(0, 3).map((row) => {
-    const action = row.direction === "positive" ? "BUY" : row.direction === "negative" ? "TRIM" : "HOLD";
-    return `${action} ${row.ticker}`;
-  });
+  const maxWeightHolding = (holdingsSnapshot?.holdings ?? [])
+    .slice()
+    .sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0))[0] ?? null;
+  const concentrationLimit = Number(rulebook.thresholds?.concentration_trim ?? 0.15);
+  const maxWeight = Number(maxWeightHolding?.weight ?? 0);
+  const concentrationRatio = concentrationLimit > 0 ? maxWeight / concentrationLimit : 0;
+  const concentrationScore = clampScore(
+    concentrationRatio * 70 + (maxWeight > concentrationLimit ? 22 : 0),
+    8,
+    100,
+  );
 
-  const watchlistRows = Array.from(signalMap.entries())
-    .map(([ticker, meta]) => {
-      const net = meta.buy - meta.sell + meta.impact * 0.35;
-      const magnitude = Math.abs(net) + Math.max(meta.buy, meta.sell) * 0.3;
-      const conviction = Math.max(20, Math.min(95, Math.round((1 - Math.exp(-magnitude)) * 100)));
+  const defensiveAbs = Math.abs(Number(drawdownDefensive ?? -0.07));
+  const hardStopAbs = Math.abs(Number(drawdownHardStop ?? -0.1));
+  const currentDrawdownAbs = Math.abs(Math.min(summary.drawdown, 0));
+  let drawdownPressureScore = 15;
+  if (currentDrawdownAbs >= hardStopAbs) {
+    drawdownPressureScore = 98;
+  } else if (currentDrawdownAbs >= defensiveAbs) {
+    const span = Math.max(0.0001, hardStopAbs - defensiveAbs);
+    drawdownPressureScore = 72 + ((currentDrawdownAbs - defensiveAbs) / span) * 22;
+  } else {
+    drawdownPressureScore = (currentDrawdownAbs / Math.max(0.0001, defensiveAbs)) * 66;
+  }
+  drawdownPressureScore = clampScore(drawdownPressureScore, 8, 100);
+
+  const currentVol = summary.rolling_8w_vol;
+  const volLimit = Number(volThreshold ?? 0.045);
+  const volatilityScore =
+    currentVol == null
+      ? 28
+      : clampScore(
+          (volLimit > 0 ? currentVol / volLimit : 0) * 72 + (currentVol > volLimit ? 18 : 0),
+          8,
+          100,
+        );
+
+  const negativeNewsRows = (newsImpact?.top_impacted_holdings ?? []).filter(
+    (row) => row.direction === "negative",
+  );
+  const negativeNewsMass = negativeNewsRows.reduce((acc, row) => acc + row.impact_score, 0);
+  const negativeAIRows = aiHoldingImpactRows.filter((row) => row.direction === "negative");
+  const avgNegativeAIConviction =
+    negativeAIRows.length > 0
+      ? negativeAIRows.reduce((acc, row) => acc + row.conviction, 0) / negativeAIRows.length
+      : 0;
+  const newsShockScore = clampScore(
+    negativeNewsMass * 45 + avgNegativeAIConviction * 0.55 + (negativeNewsRows.length > 0 ? 8 : 0),
+    10,
+    100,
+  );
+
+  const topNegativeSignal = negativeAIRows[0] ?? null;
+  const riskBoardRows: AIRiskBoardRow[] = [
+    {
+      id: "concentration",
+      label: "Concentration Pressure",
+      score: concentrationScore,
+      level: pressureLevel(concentrationScore),
+      detail:
+        maxWeightHolding != null
+          ? `${maxWeightHolding.ticker} ${fmtPct(maxWeightHolding.weight, 1)} vs trim ${fmtPct(concentrationLimit, 1)}`
+          : `No holdings yet. Trim threshold ${fmtPct(concentrationLimit, 1)}.`,
+      catalyst: topNegativeSignal != null &&
+        maxWeightHolding != null &&
+        topNegativeSignal.ticker === maxWeightHolding.ticker
+        ? topNegativeSignal.reason
+        : "Sourced from holdings weights and rulebook concentration threshold.",
+    },
+    {
+      id: "drawdown",
+      label: "Drawdown Pressure",
+      score: drawdownPressureScore,
+      level: pressureLevel(drawdownPressureScore),
+      detail: `Current ${fmtPct(summary.drawdown, 2)} | Defensive ${fmtPct(drawdownDefensive, 1)} | Hard stop ${fmtPct(drawdownHardStop, 1)}`,
+      catalyst: aiInsights?.key_risks?.[0] ?? "Sourced from drawdown and rulebook stop levels.",
+    },
+    {
+      id: "volatility",
+      label: "Volatility Pressure",
+      score: volatilityScore,
+      level: pressureLevel(volatilityScore),
+      detail:
+        currentVol != null
+          ? `Rolling 8W vol ${fmtPct(currentVol, 2)} vs cap ${fmtPct(volThreshold, 2)}`
+          : "Rolling 8W volatility not available yet.",
+      catalyst: aiInsights?.key_risks?.find((line) => line.toLowerCase().includes("vol")) ??
+        "Sourced from rolling volatility budget in the risk playbook.",
+    },
+    {
+      id: "news",
+      label: "News Shock Pressure",
+      score: newsShockScore,
+      level: pressureLevel(newsShockScore),
+      detail:
+        negativeNewsRows.length > 0
+          ? `${negativeNewsRows.length} holdings under negative catalyst pressure this cycle`
+          : "No high-conviction negative catalyst clusters in this cycle.",
+      catalyst: topNegativeSignal?.reason ?? negativeNewsRows[0]?.reason ?? "Sourced from news AI + holdings exposure map.",
+    },
+  ];
+  const riskCompositeScore = clampScore(
+    riskBoardRows.reduce((sum, row) => sum + row.score, 0) / riskBoardRows.length,
+    0,
+    100,
+  );
+
+  const aiExecutionRows: AIExecutionRow[] = recommendationRows
+    .map((rec, index) => {
+      const ticker = recommendationPrimaryTicker(rec) ?? "PORT";
+      const intent = recommendationIntent(rec);
+      const action: AIExecutionRow["action"] = intent === "sell" ? "TRIM" : intent === "buy" ? "BUY" : "HOLD";
+      const impactSignal = aiHoldingImpactRows.find((row) => row.ticker === ticker) ?? null;
+      const holding = holdingsByTicker.get(ticker) ?? null;
+
+      let urgency =
+        (action === "TRIM" ? 74 : action === "BUY" ? 62 : 44) +
+        Math.round(clampConfidence(rec.confidence) * 24);
+      if (rec.category === "Risk Control") urgency += 8;
+      if (rec.risk_level === "High") urgency += 6;
+      if (rec.risk_level === "Medium") urgency += 3;
+      if (impactSignal?.direction === "negative" && action === "TRIM") urgency += 8;
+      if (impactSignal?.direction === "positive" && action === "BUY") urgency += 8;
+      urgency = clampScore(urgency, 12, 99);
+
+      const bucket: AIExecutionBucket = urgency >= 85 ? "Act Now" : urgency >= 68 ? "This Week" : "Monitor";
+      const contextBits: string[] = [];
+      if (holding?.weight != null) contextBits.push(`Weight ${fmtPct(holding.weight, 1)}`);
+      if (impactSignal) {
+        contextBits.push(
+          `${impactSignal.direction === "negative" ? "Risk" : impactSignal.direction === "positive" ? "Tailwind" : "Mixed"} ${impactSignal.conviction}/100`,
+        );
+      }
+      if (rec.category) contextBits.push(rec.category);
+      if (!holding && action === "BUY") contextBits.push("New candidate");
+
       return {
+        id: `${ticker}-${index}`,
         ticker,
-        conviction,
-        net,
-        reason: Array.from(meta.reasons)[0] ?? "Cross-summary AI signal aggregation.",
-        source: Array.from(meta.sources).join(" + "),
+        action,
+        urgency,
+        bucket,
+        thesis: rec.explanation,
+        context: contextBits.join(" • "),
+        source: impactSignal?.source ? `Dashboard AI + ${impactSignal.source}` : "Dashboard AI",
       };
     })
-    .filter((row) => row.net > 0.05)
+    .sort((a, b) => b.urgency - a.urgency)
+    .slice(0, 8);
+  const executionActNow = aiExecutionRows.filter((row) => row.bucket === "Act Now").length;
+  const executionThisWeek = aiExecutionRows.filter((row) => row.bucket === "This Week").length;
+  const executionMonitor = aiExecutionRows.filter((row) => row.bucket === "Monitor").length;
+
+  const watchlistRecommendationSource = aiPipelineReady ? aiSummaryRecommendationSet : [];
+  const watchlistRows = watchlistRecommendationSource
+    .filter((rec) => recommendationIntent(rec) === "buy")
+    .map((rec) => {
+      const metrics = rec.supporting_metrics ?? {};
+      const yahooValidated = metrics.yahoo_validation === true;
+      if (!yahooValidated) return null;
+      const ticker = recommendationPrimaryTicker(rec);
+      if (!ticker) return null;
+
+      const rsi14 = metricNumber(metrics.rsi14);
+      const ma20GapPct = metricNumber(metrics.ma20_gap_pct);
+      const momentum20Pct = metricNumber(metrics.momentum_20d_pct);
+      const trailingPe = metricNumber(metrics.trailing_pe);
+      const forwardPe = metricNumber(metrics.forward_pe);
+
+      const technical: string[] = [];
+      if (rsi14 != null) technical.push(`RSI14 ${rsi14.toFixed(1)}`);
+      if (ma20GapPct != null) technical.push(`vs MA20 ${fmtPct(ma20GapPct, 2)}`);
+      if (momentum20Pct != null) technical.push(`20d ${fmtPct(momentum20Pct, 2)}`);
+
+      const fundamental: string[] = [];
+      if (trailingPe != null) fundamental.push(`P/E ${trailingPe.toFixed(1)}`);
+      if (forwardPe != null) fundamental.push(`Fwd P/E ${forwardPe.toFixed(1)}`);
+
+      return {
+        ticker,
+        conviction: Math.max(20, Math.min(95, Math.round(rec.confidence * 100))),
+        reason: rec.explanation,
+        source: `AI + Yahoo`,
+        technical: technical.join(" • "),
+        fundamental: fundamental.join(" • "),
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row))
     .sort((a, b) => b.conviction - a.conviction)
     .slice(0, 6);
   const activeChart = DASHBOARD_CHARTS[chartIndex] ?? DASHBOARD_CHARTS[0];
@@ -855,10 +1133,6 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex h-10 min-w-[220px] items-center gap-2 rounded-lg border border-border bg-[#101013] px-3 text-xs text-muted">
-              <span className="text-neutral">⌕</span>
-              <span>Search ticker or theme</span>
-            </div>
             <div className="rounded-lg border border-border bg-[#101013] px-3 py-2 text-xs font-mono text-neutral">
               {summary.date}
             </div>
@@ -870,9 +1144,9 @@ export default function DashboardPage() {
             </button>
             <Link
               href="/holdings"
-              className="rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-white transition hover:brightness-110"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-white transition hover:brightness-110"
             >
-              New Allocation
+              <span className="text-sm leading-none font-light">+</span> Add Position
             </Link>
           </div>
         </div>
@@ -973,48 +1247,91 @@ export default function DashboardPage() {
 
         <div className="hf-card p-5">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-white">Holdings Impact Matrix</h2>
-            <span className="text-[11px] text-muted">Cross-summary AI impact</span>
+            <h2 className="text-sm font-semibold text-white">AI Portfolio Risk Board</h2>
+            <span className="text-[11px] text-muted">Pipeline-synced pressure scan</span>
           </div>
-          <div className="mb-3 rounded-lg border border-border bg-[#101013] px-2.5 py-2">
-            <p className="text-[10px] text-muted">
-              Legend: <span className="text-positive">+conviction</span> positive portfolio impact,{" "}
-              <span className="text-negative">-conviction</span> negative impact. Scores are 0-100 confidence.
-            </p>
-          </div>
-          {aiEnabled && !allAISummariesReady ? (
+          {aiEnabled && !aiPipelineReady ? (
             <div className="rounded-lg border border-border bg-[#101013] px-3 py-3">
-              <ThinkingIndicator label="Waiting for all AI summaries before scoring impact matrix" />
+              <ThinkingIndicator label="Waiting for all AI summaries before building risk board" />
+            </div>
+          ) : !aiEnabled ? (
+            <div className="rounded-lg border border-border bg-[#101013] px-3 py-3">
+              <p className="text-[11px] text-muted">Enable AI API and run the AI pipeline to unlock risk board diagnostics.</p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {impactRows.length === 0 ? (
-                <div className="rounded-lg border border-border bg-[#101013] px-3 py-2">
-                  <p className="text-[11px] text-muted">No holdings impact signals detected in this AI cycle.</p>
-                </div>
-              ) : (
-                impactRows.map((row) => (
-                  <div
-                    key={row.ticker + row.reason}
-                    className="flex items-center justify-between rounded-lg border border-border bg-[#101013] px-3 py-2"
+            <div className="space-y-2.5">
+              <div className="rounded-lg border border-border bg-[#101013] px-3 py-2.5">
+                <div className="mb-1.5 flex items-center justify-between">
+                  <p className="text-[11px] text-muted">Composite Portfolio Pressure</p>
+                  <p
+                    className={cn(
+                      "text-xs font-mono font-semibold",
+                      pressureLevel(riskCompositeScore) === "Critical"
+                        ? "text-negative"
+                        : pressureLevel(riskCompositeScore) === "High"
+                          ? "text-caution"
+                          : pressureLevel(riskCompositeScore) === "Moderate"
+                            ? "text-accent"
+                            : "text-positive",
+                    )}
                   >
-                    <div>
-                      <p className="text-xs font-medium text-neutral">{row.ticker}</p>
-                      <p className="text-[11px] text-muted line-clamp-1">{row.reason}</p>
-                      <p className="text-[10px] text-muted">{row.source}</p>
-                    </div>
+                    {riskCompositeScore}/100
+                  </p>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-[#1b1b1f]">
+                  <div
+                    className={cn(
+                      "h-full rounded-full transition-all duration-500",
+                      pressureLevel(riskCompositeScore) === "Critical"
+                        ? "bg-negative"
+                        : pressureLevel(riskCompositeScore) === "High"
+                          ? "bg-caution"
+                          : pressureLevel(riskCompositeScore) === "Moderate"
+                            ? "bg-accent"
+                            : "bg-positive",
+                    )}
+                    style={{ width: `${riskCompositeScore}%` }}
+                  />
+                </div>
+              </div>
+              {riskBoardRows.map((row) => (
+                <div key={row.id} className="rounded-lg border border-border bg-[#101013] px-3 py-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-medium text-neutral">{row.label}</p>
                     <p
                       className={cn(
-                        "text-xs font-mono font-medium",
-                        row.direction === "negative" ? "text-negative" : row.direction === "positive" ? "text-positive" : "text-caution",
+                        "text-[11px] font-mono font-semibold",
+                        row.level === "Critical"
+                          ? "text-negative"
+                          : row.level === "High"
+                            ? "text-caution"
+                            : row.level === "Moderate"
+                              ? "text-accent"
+                              : "text-positive",
                       )}
                     >
-                      {row.direction === "negative" ? "-" : row.direction === "positive" ? "+" : "±"}
-                      {row.conviction}
+                      {row.level} {row.score}
                     </p>
                   </div>
-                ))
-              )}
+                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#1b1b1f]">
+                    <div
+                      className={cn(
+                        "h-full rounded-full transition-all duration-500",
+                        row.level === "Critical"
+                          ? "bg-negative"
+                          : row.level === "High"
+                            ? "bg-caution"
+                            : row.level === "Moderate"
+                              ? "bg-accent"
+                              : "bg-positive",
+                      )}
+                      style={{ width: `${row.score}%` }}
+                    />
+                  </div>
+                  <p className="mt-1.5 text-[10px] text-muted">{row.detail}</p>
+                  <p className="mt-1 text-[10px] text-neutral line-clamp-2">{row.catalyst}</p>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -1023,59 +1340,153 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 xl:grid-cols-[1.7fr_1fr] gap-4">
         <div className="hf-card p-5">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-white">Catalyst Monitor</h2>
-            <span className="text-[11px] text-muted">Relevance x recency</span>
+            <h2 className="text-sm font-semibold text-white">AI Execution Queue</h2>
+            <span className="text-[11px] text-muted">Priority actions from full AI pipeline context</span>
           </div>
-          <div className="rounded-lg border border-border bg-[#101013]">
-            <div className="grid grid-cols-[1fr_auto_auto] gap-2 border-b border-border px-3 py-2 text-[11px] font-semibold text-muted">
-              <span>Headline</span>
-              <span>Ticker</span>
-              <span>Impact</span>
+          {aiEnabled && !aiPipelineReady ? (
+            <div className="rounded-lg border border-border bg-[#101013] px-3 py-3">
+              <ThinkingIndicator label="Waiting for all AI summaries before building execution queue" />
             </div>
-            {(catalystRows.length > 0
-              ? catalystRows
-              : [
-                  { headline: "US CPI cools; duration bid strengthens", ticker: "VFV", impact: 0.37, direction: "positive" as const },
-                  { headline: "AI capex cycle extends into H2", ticker: "NVDA", impact: 0.54, direction: "positive" as const },
-                  { headline: "Silver volatility spikes on real rates", ticker: "PHYS", impact: 0.18, direction: "negative" as const },
-                ]
-            ).map((row) => (
-              <div key={row.headline} className="grid grid-cols-[1fr_auto_auto] gap-2 border-b border-border/70 px-3 py-2 text-xs last:border-b-0">
-                <span className="line-clamp-1 text-neutral">{row.headline}</span>
-                <span className="font-mono text-white">{row.ticker}</span>
-                <span className={row.direction === "negative" ? "font-mono text-negative" : "font-mono text-positive"}>
-                  {row.direction === "negative" ? "-" : "+"}
-                  {fmt(row.impact, 2)}
-                </span>
+          ) : !aiEnabled ? (
+            <div className="rounded-lg border border-border bg-[#101013] px-3 py-3">
+              <p className="text-[11px] text-muted">Enable AI API and run the AI pipeline to unlock execution priorities.</p>
+            </div>
+          ) : aiExecutionRows.length === 0 ? (
+            <div className="rounded-lg border border-border bg-[#101013] px-3 py-3">
+              <p className="text-[11px] text-muted">No actionable AI queue items generated for this cycle yet.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-lg border border-negative/30 bg-negative/10 px-2.5 py-2 text-center">
+                  <p className="text-[10px] text-negative">Act Now</p>
+                  <p className="text-sm font-mono text-white">{executionActNow}</p>
+                </div>
+                <div className="rounded-lg border border-caution/30 bg-caution/10 px-2.5 py-2 text-center">
+                  <p className="text-[10px] text-caution">This Week</p>
+                  <p className="text-sm font-mono text-white">{executionThisWeek}</p>
+                </div>
+                <div className="rounded-lg border border-border bg-[#101013] px-2.5 py-2 text-center">
+                  <p className="text-[10px] text-muted">Monitor</p>
+                  <p className="text-sm font-mono text-white">{executionMonitor}</p>
+                </div>
               </div>
-            ))}
-          </div>
+              <div className="rounded-lg border border-border bg-[#101013]">
+                {aiExecutionRows.map((row) => (
+                  <div
+                    key={row.id}
+                    className="border-b border-border/70 px-3 py-2.5 last:border-b-0"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={cn(
+                            "rounded-md px-1.5 py-0.5 text-[10px] font-semibold",
+                            row.action === "TRIM"
+                              ? "bg-negative/20 text-negative"
+                              : row.action === "BUY"
+                                ? "bg-positive/20 text-positive"
+                                : "bg-caution/20 text-caution",
+                          )}
+                        >
+                          {row.action}
+                        </span>
+                        <p className="text-xs font-semibold text-white">{row.ticker}</p>
+                        <span
+                          className={cn(
+                            "rounded-full px-1.5 py-0.5 text-[10px] font-mono",
+                            row.bucket === "Act Now"
+                              ? "bg-negative/15 text-negative"
+                              : row.bucket === "This Week"
+                                ? "bg-caution/15 text-caution"
+                                : "bg-border text-muted",
+                          )}
+                        >
+                          {row.bucket}
+                        </span>
+                      </div>
+                      <p className="text-[11px] font-mono text-accent">Urgency {row.urgency}</p>
+                    </div>
+                    <p className="mt-1 text-[11px] text-neutral line-clamp-2">{row.thesis}</p>
+                    {row.context ? <p className="mt-1 text-[10px] text-muted line-clamp-1">{row.context}</p> : null}
+                    <p className="mt-1 text-[10px] text-muted">{row.source}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="space-y-4">
           <div className="hf-card p-5 space-y-3">
-            <h2 className="text-sm font-semibold text-white">AI Allocation Signal</h2>
-            <p className="text-xs text-neutral leading-relaxed">{aiSignal}</p>
-            <div className="flex flex-wrap gap-2">
-              {(signalChips.length > 0 ? signalChips : ["BUY NVDA", "HOLD VFV", "TRIM PHYS"]).map((chip) => (
-                <span key={chip} className="rounded-full border border-border bg-[#101013] px-2.5 py-1 text-[11px] font-medium text-neutral">
-                  {chip}
-                </span>
-              ))}
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-white">Market Sentiment</h2>
+              <span className="text-[10px] font-mono text-muted">CNN Fear &amp; Greed</span>
             </div>
+            {fearGreed ? (
+              <>
+                {/* Score + label */}
+                <div className="flex items-end gap-3">
+                  <span className={cn("text-4xl font-bold tabular-nums leading-none", fgColor(fearGreed.score))}>
+                    {Math.round(fearGreed.score)}
+                  </span>
+                  <span className={cn("text-sm font-semibold pb-0.5", fgColor(fearGreed.score))}>
+                    {fearGreed.rating}
+                  </span>
+                </div>
+                {/* Gauge bar */}
+                <div className="space-y-1">
+                  <div className="relative h-2.5 w-full rounded-full bg-[#101013] overflow-hidden">
+                    {/* Gradient track: red → orange → gray → green */}
+                    <div
+                      className="absolute inset-0 rounded-full"
+                      style={{
+                        background:
+                          "linear-gradient(to right, #EF4444 0%, #F97316 25%, #6B7280 45%, #6B7280 55%, #22C55E 75%, #16A34A 100%)",
+                        opacity: 0.25,
+                      }}
+                    />
+                    {/* Filled portion */}
+                    <div
+                      className={cn("h-full rounded-full transition-all duration-700", fgBarColor(fearGreed.score))}
+                      style={{ width: `${fearGreed.score}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[9px] text-muted/60 font-mono">
+                    <span>Extreme Fear</span>
+                    <span>Neutral</span>
+                    <span>Extreme Greed</span>
+                  </div>
+                </div>
+                {/* Deltas */}
+                <div className="flex gap-4 text-[11px]">
+                  {fgDelta(fearGreed.score, fearGreed.previous_close) && (
+                    <span className="text-muted">
+                      vs yesterday{" "}
+                      <span className={cn("font-mono font-medium", fearGreed.score >= (fearGreed.previous_close ?? fearGreed.score) ? "text-positive" : "text-negative")}>
+                        {fgDelta(fearGreed.score, fearGreed.previous_close)}
+                      </span>
+                    </span>
+                  )}
+                  {fgDelta(fearGreed.score, fearGreed.previous_1_week) && (
+                    <span className="text-muted">
+                      vs 1w{" "}
+                      <span className={cn("font-mono font-medium", fearGreed.score >= (fearGreed.previous_1_week ?? fearGreed.score) ? "text-positive" : "text-negative")}>
+                        {fgDelta(fearGreed.score, fearGreed.previous_1_week)}
+                      </span>
+                    </span>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="rounded-lg border border-border bg-[#101013] px-3 py-3">
+                <ThinkingIndicator label="Fetching CNN Fear & Greed Index" />
+              </div>
+            )}
             <div className="flex items-center gap-2 text-[11px] text-muted">
               <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
-              <span className="h-1.5 w-1.5 rounded-full bg-[#FF8A4C] animate-pulse [animation-delay:0.15s]" />
-              <span className="h-1.5 w-1.5 rounded-full bg-[#FFB48C] animate-pulse [animation-delay:0.25s]" />
-              <span>Adaptive model is continuously re-scoring</span>
+              <span>Real-time market sentiment — not portfolio-specific</span>
             </div>
-            <button
-              onClick={handleRefreshAI}
-              disabled={!aiEnabled || aiGenerating || !aiContext}
-              className="w-full rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
-            >
-              {aiGenerating ? "Generating..." : "Run Scenario"}
-            </button>
           </div>
 
           <div className="hf-card p-5 space-y-2">
@@ -1093,14 +1504,16 @@ export default function DashboardPage() {
                     <p className="text-[11px] font-mono text-accent">Conviction {row.conviction}/100</p>
                   </div>
                   <p className="mt-1 text-[10px] text-muted">{row.source}</p>
-                  <p className="mt-1 text-[11px] text-neutral line-clamp-2">{row.reason}</p>
+                  {row.technical ? <p className="mt-1 text-[10px] text-caution">{row.technical}</p> : null}
+                  {row.fundamental ? <p className="mt-1 text-[10px] text-muted">{row.fundamental}</p> : null}
+                  <p className="mt-1 text-[11px] text-neutral">{row.reason}</p>
                 </div>
               ))
             ) : (
               <div className="rounded-lg border border-border bg-[#101013] px-3 py-2">
                 <p className="text-[11px] text-muted">
                   {aiEnabled
-                    ? "No positive buy signals across all AI summaries for this cycle."
+                    ? "No Yahoo-validated buy signals across current AI recommendations for this cycle."
                     : "Enable AI API to generate AI watchlist signals."}
                 </p>
               </div>
@@ -1140,8 +1553,8 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <h2 className="text-base font-semibold text-white">
             Recommendations
-            <span className="ml-2 text-xs font-mono text-muted">{recs.length}</span>
-            <span className="ml-2 text-[11px] font-mono text-muted">Source: {recSource}</span>
+            <span className="ml-2 text-xs font-mono text-muted">{recommendationRows.length}</span>
+            {aiPipelineReady ? <span className="ml-2 text-[11px] font-mono text-muted">Source: {recSource}</span> : null}
           </h2>
         </div>
 
@@ -1149,14 +1562,14 @@ export default function DashboardPage() {
           <span className="text-[11px] font-mono text-muted">{modeLabel}</span>
           <button
             onClick={handleRefreshAI}
-            disabled={aiGenerating || !aiContext}
+            disabled={aiGenerating || !aiContext || !aiPipelineReady}
             className="rounded-lg border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent transition hover:bg-accent/20 disabled:opacity-50"
           >
             {aiGenerating ? "Generating..." : "Refresh AI Recs"}
           </button>
           <button
             onClick={handleRunRules}
-            disabled={runningRules}
+            disabled={runningRules || (aiEnabled && !aiPipelineReady)}
             className="rounded-lg border border-border bg-[#101013] px-3 py-1.5 text-xs font-medium text-neutral transition hover:bg-white/[0.03] disabled:opacity-50"
           >
             {runningRules ? "Running Rules..." : "Run Rules"}
@@ -1175,13 +1588,21 @@ export default function DashboardPage() {
           <p className="text-[11px] font-mono text-muted">Active model: {aiModel}</p>
         )}
 
-        {recs.length === 0 ? (
+        {aiEnabled && !aiPipelineReady ? (
+          <div className="rounded-lg border border-border bg-[#101013] px-3 py-3">
+            <ThinkingIndicator label="Waiting for all AI summaries before generating recommendations" />
+          </div>
+        ) : !aiEnabled ? (
           <p className="text-sm text-muted py-4">
-            No recommendations yet. Enable AI API and run AI recs, or run rule-based recompute.
+            Enable AI API and run the AI pipeline to generate recommendations.
+          </p>
+        ) : recommendationRows.length === 0 ? (
+          <p className="text-sm text-muted py-4">
+            No recommendations generated for this AI cycle yet.
           </p>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {recs.map((rec) => (
+            {recommendationRows.map((rec) => (
               <RecommendationCard key={rec.id} rec={rec} onClick={() => setSelectedRec(rec)} />
             ))}
           </div>

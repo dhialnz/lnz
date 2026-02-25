@@ -76,20 +76,22 @@ def _parse_date(val, dayfirst: bool = False) -> Optional[date]:
     if not s or s.lower() in ("nan", "nat", "none"):
         return None
 
+    # Prefer month-first parsing by default (common in uploaded broker exports).
+    # When dayfirst=True, we prepend day-first variants below.
     fmts = [
         "%Y-%m-%d %H:%M:%S",
         "%Y-%m-%d %H:%M",
         "%Y-%m-%dT%H:%M:%S",
         "%Y-%m-%dT%H:%M",
         "%m/%d/%Y %H:%M:%S",
-        "%d/%m/%Y %H:%M:%S",
         "%m-%d-%Y %H:%M:%S",
-        "%d-%m-%Y %H:%M:%S",
-        "%d/%m/%Y",
         "%m/%d/%Y",
         "%Y-%m-%d",
-        "%d-%m-%Y",
         "%m-%d-%Y",
+        "%d/%m/%Y %H:%M:%S",
+        "%d-%m-%Y %H:%M:%S",
+        "%d/%m/%Y",
+        "%d-%m-%Y",
     ]
     if dayfirst:
         fmts = ["%d/%m/%Y %H:%M:%S", "%d-%m-%Y %H:%M:%S", "%d/%m/%Y", "%d-%m-%Y"] + fmts
