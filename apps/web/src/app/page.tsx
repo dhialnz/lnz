@@ -48,6 +48,7 @@ import { cn, fmt, fmtPct, signedClass } from "@/lib/utils";
 const DEFAULT_RECOMMENDER_MODEL = "gpt-4o-mini";
 const RECS_CACHE_PREFIX = "lnz_weekly_ai_recs_v2";
 const TICKER_PATTERN = /\b[A-Z]{1,5}(?:\.[A-Z]{1,2})?\b/g;
+const TICKER_TOKEN_PATTERN = /^[A-Z]{1,5}(?:\.[A-Z]{1,2})?$/;
 const TICKER_STOPWORDS = new Set([
   "BUY",
   "SELL",
@@ -60,6 +61,27 @@ const TICKER_STOPWORDS = new Set([
   "ETF",
   "ALL",
   "NOW",
+  "THE",
+  "FOR",
+  "AND",
+  "WITH",
+  "FROM",
+  "THIS",
+  "THAT",
+  "THEN",
+  "WHEN",
+  "WEEK",
+  "IN",
+  "ON",
+  "AT",
+  "OF",
+  "TO",
+  "BY",
+  "OR",
+  "AS",
+  "ACT",
+  "MONITOR",
+  "RISK",
 ]);
 const POSITIVE_NEWS_WORDS = [
   "bullish",
@@ -435,9 +457,23 @@ function ThinkingIndicator({ label }: { label: string }) {
   );
 }
 
-function extractTickerCandidates(text: string): string[] {
+function normalizeTickerToken(token: string, allowedTickers?: Set<string>): string | null {
+  const normalized = String(token || "").trim().toUpperCase();
+  if (!normalized) return null;
+  if (!TICKER_TOKEN_PATTERN.test(normalized)) return null;
+  if (TICKER_STOPWORDS.has(normalized) && !(allowedTickers && allowedTickers.has(normalized))) return null;
+  if (allowedTickers && allowedTickers.size > 0 && !allowedTickers.has(normalized)) return null;
+  return normalized;
+}
+
+function extractTickerCandidates(text: string, allowedTickers?: Set<string>): string[] {
   const matches = text.toUpperCase().match(TICKER_PATTERN) ?? [];
-  return matches.filter((token) => !TICKER_STOPWORDS.has(token));
+  const unique = new Set<string>();
+  for (const token of matches) {
+    const normalized = normalizeTickerToken(token, allowedTickers);
+    if (normalized) unique.add(normalized);
+  }
+  return Array.from(unique);
 }
 
 function recommendationIntent(rec: Recommendation): "buy" | "sell" | "hold" | "neutral" {
@@ -453,11 +489,22 @@ function metricNumber(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function recommendationPrimaryTicker(rec: Recommendation): string | null {
+function recommendationPrimaryTicker(
+  rec: Recommendation,
+  allowedTickers?: Set<string>,
+  holdingsTickers?: Set<string>,
+): string | null {
   const metrics = rec.supporting_metrics ?? {};
-  const validated = typeof metrics.validated_ticker === "string" ? metrics.validated_ticker.trim().toUpperCase() : "";
+  const validated = normalizeTickerToken(
+    typeof metrics.validated_ticker === "string" ? metrics.validated_ticker : "",
+    allowedTickers,
+  );
   if (validated) return validated;
-  const fromTitle = extractTickerCandidates(rec.title)[0];
+
+  const fromHoldingsTitle = holdingsTickers ? extractTickerCandidates(rec.title, holdingsTickers)[0] : null;
+  if (fromHoldingsTitle) return fromHoldingsTitle;
+
+  const fromTitle = extractTickerCandidates(rec.title, allowedTickers)[0];
   return fromTitle ?? null;
 }
 
@@ -791,6 +838,37 @@ export default function DashboardPage() {
   const aiSummaryRecommendationSet = latestDashboardSummary?.recommendations ?? [];
   const aiInsights = latestAssistantSummary;
   const newsSummaryText = latestNewsSummary?.text ?? "";
+  const holdingsByTicker = new Map(
+    (holdingsSnapshot?.holdings ?? []).map((holding) => [holding.ticker.toUpperCase(), holding]),
+  );
+  const holdingsTickerSet = new Set(holdingsByTicker.keys());
+
+  const dashboardValidatedTickerSet = new Set<string>();
+  for (const rec of aiSummaryRecommendationSet) {
+    const metrics = rec.supporting_metrics ?? {};
+    const yahooValidated = metrics.yahoo_validation === true;
+    if (!yahooValidated) continue;
+    const ticker = normalizeTickerToken(typeof metrics.validated_ticker === "string" ? metrics.validated_ticker : "");
+    if (ticker) dashboardValidatedTickerSet.add(ticker);
+  }
+
+  const newsTickerSet = new Set<string>();
+  for (const row of newsImpact?.top_impacted_holdings ?? []) {
+    const ticker = normalizeTickerToken(row.ticker);
+    if (ticker) newsTickerSet.add(ticker);
+  }
+  for (const event of newsImpact?.events ?? []) {
+    for (const row of event.impacted_holdings ?? []) {
+      const ticker = normalizeTickerToken(row.ticker);
+      if (ticker) newsTickerSet.add(ticker);
+    }
+  }
+
+  const allowedDashboardTickerSet = new Set<string>([
+    ...holdingsTickerSet,
+    ...dashboardValidatedTickerSet,
+    ...newsTickerSet,
+  ]);
 
   const signalMap = new Map<
     string,
@@ -798,8 +876,8 @@ export default function DashboardPage() {
   >();
 
   const addSignal = (ticker: string, buy: number, sell: number, impact: number, reason: string, source: string) => {
-    if (!ticker) return;
-    const key = ticker.toUpperCase();
+    const key = normalizeTickerToken(ticker, allowedDashboardTickerSet);
+    if (!key) return;
     const current = signalMap.get(key) ?? {
       buy: 0,
       sell: 0,
@@ -835,7 +913,7 @@ export default function DashboardPage() {
           lower.includes("underweight");
         if (!buyIntent && !sellIntent) continue;
 
-        for (const ticker of extractTickerCandidates(line)) {
+        for (const ticker of extractTickerCandidates(line, allowedDashboardTickerSet)) {
           const strength = 0.25 + rec.confidence * 0.75;
           addSignal(
             ticker,
@@ -865,19 +943,19 @@ export default function DashboardPage() {
         addSignal(ticker, 0.22, 0, 0.12, "Assistant watchlist", "Assistant");
       }
       for (const riskLine of aiInsights.key_risks ?? []) {
-        for (const ticker of extractTickerCandidates(riskLine)) {
+        for (const ticker of extractTickerCandidates(riskLine, allowedDashboardTickerSet)) {
           addSignal(ticker, 0, 0.28, -0.15, riskLine, "Assistant Risks");
         }
       }
       for (const opportunityLine of aiInsights.key_opportunities ?? []) {
-        for (const ticker of extractTickerCandidates(opportunityLine)) {
+        for (const ticker of extractTickerCandidates(opportunityLine, allowedDashboardTickerSet)) {
           addSignal(ticker, 0.3, 0, 0.12, opportunityLine, "Assistant Opportunities");
         }
       }
     }
 
     for (const line of newsSummaryText.split(/\n+/).map((s) => s.trim()).filter(Boolean)) {
-      const tickers = extractTickerCandidates(line);
+      const tickers = extractTickerCandidates(line, allowedDashboardTickerSet);
       if (tickers.length === 0) continue;
       const pos = keywordScore(line, POSITIVE_NEWS_WORDS);
       const neg = keywordScore(line, NEGATIVE_NEWS_WORDS);
@@ -894,11 +972,6 @@ export default function DashboardPage() {
       }
     }
   }
-
-  const holdingsByTicker = new Map(
-    (holdingsSnapshot?.holdings ?? []).map((holding) => [holding.ticker.toUpperCase(), holding]),
-  );
-  const holdingsTickerSet = new Set(holdingsByTicker.keys());
   const aiHoldingImpactRows = Array.from(signalMap.entries())
     .filter(([ticker]) => holdingsTickerSet.has(ticker))
     .map(([ticker, meta]) => {
@@ -924,11 +997,18 @@ export default function DashboardPage() {
   ].filter(Boolean);
   const drawdownSubtitle = drawdownSubtitleParts.length > 0 ? drawdownSubtitleParts.join(" • ") : undefined;
 
-  const recommendationRows = aiPipelineReady
+  const rawRecommendationRows = aiPipelineReady
     ? aiSummaryRecommendationSet.length > 0
       ? aiSummaryRecommendationSet
       : recs
     : [];
+  const recommendationRows = rawRecommendationRows.filter((rec) => {
+    const primaryTicker = recommendationPrimaryTicker(rec, allowedDashboardTickerSet, holdingsTickerSet);
+    if (primaryTicker) return true;
+    const lines = [rec.title, rec.explanation, ...rec.actions, ...rec.triggers];
+    const hasTickerLikeToken = lines.some((line) => ((line.toUpperCase().match(TICKER_PATTERN) ?? []).length > 0));
+    return !hasTickerLikeToken;
+  });
 
   const maxWeightHolding = (holdingsSnapshot?.holdings ?? [])
     .slice()
@@ -1039,7 +1119,8 @@ export default function DashboardPage() {
 
   const aiExecutionRows: AIExecutionRow[] = recommendationRows
     .map((rec, index) => {
-      const ticker = recommendationPrimaryTicker(rec) ?? "PORT";
+      const ticker = recommendationPrimaryTicker(rec, allowedDashboardTickerSet, holdingsTickerSet);
+      if (!ticker) return null;
       const intent = recommendationIntent(rec);
       const action: AIExecutionRow["action"] = intent === "sell" ? "TRIM" : intent === "buy" ? "BUY" : "HOLD";
       const impactSignal = aiHoldingImpactRows.find((row) => row.ticker === ticker) ?? null;
@@ -1077,13 +1158,15 @@ export default function DashboardPage() {
         source: impactSignal?.source ? `Dashboard AI + ${impactSignal.source}` : "Dashboard AI",
       };
     })
+    .filter((row): row is AIExecutionRow => row !== null)
     .sort((a, b) => b.urgency - a.urgency)
     .slice(0, 8);
   const executionActNow = aiExecutionRows.filter((row) => row.bucket === "Act Now").length;
   const executionThisWeek = aiExecutionRows.filter((row) => row.bucket === "This Week").length;
   const executionMonitor = aiExecutionRows.filter((row) => row.bucket === "Monitor").length;
 
-  const watchlistRecommendationSource = aiPipelineReady ? aiSummaryRecommendationSet : [];
+  const watchlistRecommendationSource = recommendationRows;
+  const allowedWatchlistTickerSet = new Set<string>([...allowedDashboardTickerSet]);
   const watchlistCandidateMap = new Map<
     string,
     {
@@ -1106,9 +1189,7 @@ export default function DashboardPage() {
     fundamental?: string;
     validated?: boolean;
   }) => {
-    const ticker = String(candidate.ticker || "").trim().toUpperCase();
-    if (!ticker || TICKER_STOPWORDS.has(ticker)) return;
-    const normalizedTicker = extractTickerCandidates(ticker)[0] ?? ticker;
+    const normalizedTicker = normalizeTickerToken(candidate.ticker, allowedWatchlistTickerSet);
     if (!normalizedTicker) return;
 
     const conviction = Math.max(20, Math.min(95, Math.round(candidate.conviction)));
@@ -1132,7 +1213,7 @@ export default function DashboardPage() {
   for (const rec of watchlistRecommendationSource) {
     if (recommendationIntent(rec) !== "buy") continue;
     const metrics = rec.supporting_metrics ?? {};
-    const ticker = recommendationPrimaryTicker(rec) ?? extractTickerCandidates(rec.title)[0];
+    const ticker = recommendationPrimaryTicker(rec, allowedWatchlistTickerSet, holdingsTickerSet);
     if (!ticker) continue;
 
     const rsi14 = metricNumber(metrics.rsi14);
