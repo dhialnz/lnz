@@ -66,6 +66,15 @@ docker compose -f docker-compose.prod.yml up --build -d
 
 Caddy handles **automatic HTTPS via Let's Encrypt** on first start. No manual certificate setup needed.
 
+### Recommended Safe Deploy Command (VPS)
+
+Use the deploy helper to avoid runtime build loops and repeated `502` after updates:
+
+```bash
+cd /opt/lnz
+bash scripts/ops/deploy_prod.sh
+```
+
 ### Production vs Development
 
 | Feature | Dev (`docker-compose.yml`) | Prod (`docker-compose.prod.yml`) |
