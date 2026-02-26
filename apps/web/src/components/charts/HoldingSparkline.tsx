@@ -1,6 +1,6 @@
 "use client";
 
-import { Line, LineChart, ResponsiveContainer } from "recharts";
+import { Area, AreaChart, ResponsiveContainer } from "recharts";
 import type { SparklinePoint } from "@/lib/types";
 
 interface Props {
@@ -23,20 +23,28 @@ export default function HoldingSparkline({ data, width = 120, height = 48 }: Pro
 
   const first = data[0].close;
   const last = data[data.length - 1].close;
-  const color = last >= first ? "#3fb950" : "#f85149";
+  const isUp = last >= first;
+  const color = isUp ? "#3fb950" : "#f85149";
 
   return (
     <ResponsiveContainer width={width} height={height}>
-      <LineChart data={data} margin={{ top: 4, right: 2, bottom: 4, left: 2 }}>
-        <Line
+      <AreaChart data={data} margin={{ top: 4, right: 2, bottom: 4, left: 2 }}>
+        <defs>
+          <linearGradient id={`sparkGrad-${isUp ? "up" : "dn"}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity={0.18} />
+            <stop offset="100%" stopColor={color} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <Area
           type="monotone"
           dataKey="close"
           stroke={color}
           dot={false}
           strokeWidth={1.5}
+          fill={`url(#sparkGrad-${isUp ? "up" : "dn"})`}
           isAnimationActive={false}
         />
-      </LineChart>
+      </AreaChart>
     </ResponsiveContainer>
   );
 }

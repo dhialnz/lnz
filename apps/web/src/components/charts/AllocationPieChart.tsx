@@ -46,9 +46,16 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
           maximumFractionDigits: 0,
         }).format(Math.abs(v))}`;
   return (
-    <div className="bg-panel border border-border rounded px-3 py-2 text-xs font-mono">
-      <div className="text-accent font-semibold">{d.ticker}</div>
-      <div className="text-muted">{valueText}</div>
+    <div
+      className="rounded-lg px-3 py-2 text-xs font-mono"
+      style={{
+        backgroundColor: "#0d1117",
+        border: "1px solid #30363d",
+        boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+      }}
+    >
+      <div className="text-accent font-semibold mb-1">{d.ticker}</div>
+      <div className="text-primary">{valueText}</div>
       <div className="text-muted">{(d.weight * 100).toFixed(1)}% of portfolio</div>
     </div>
   );
@@ -79,24 +86,24 @@ export default function AllocationPieChart({ holdings }: Props) {
           dataKey="value"
           nameKey="ticker"
           cx="50%"
-          cy="45%"
-          outerRadius="70%"
+          cy="44%"
+          outerRadius="68%"
           innerRadius="40%"
           paddingAngle={2}
           strokeWidth={0}
         >
           {data.map((_, i) => (
-            <Cell key={i} fill={COLORS[i % COLORS.length]} />
+            <Cell key={i} fill={COLORS[i % COLORS.length]} opacity={0.9} />
           ))}
         </Pie>
         <Tooltip content={<CustomTooltip />} />
         <Legend
           formatter={(value: string) => (
-            <span className="text-xs font-mono text-muted">{value}</span>
+            <span style={{ fontSize: 10, fontFamily: "monospace", color: "#8b949e" }}>{value}</span>
           )}
           iconType="circle"
-          iconSize={8}
-          wrapperStyle={{ fontSize: 11, fontFamily: "monospace" }}
+          iconSize={7}
+          wrapperStyle={{ fontSize: 10, fontFamily: "monospace", paddingTop: 4 }}
         />
       </PieChart>
     </ResponsiveContainer>

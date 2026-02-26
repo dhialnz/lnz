@@ -1354,12 +1354,18 @@ export default function DashboardPage() {
               className="flex transition-transform duration-500 ease-out will-change-transform"
               style={{ transform: `translateX(-${chartIndex * 100}%)` }}
             >
-              <div className="w-full shrink-0 p-3">
-                <h3 className="mb-2 text-[11px] font-mono uppercase tracking-wider text-muted">Portfolio Value vs Peak</h3>
+              <div className="w-full shrink-0 px-4 pt-3 pb-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-[11px] font-mono uppercase tracking-wider text-muted">Portfolio Value vs Peak</h3>
+                  <span className="text-[11px] font-mono text-accent">{totalValueDisplay}</span>
+                </div>
                 <ValueChart data={convertedSeries} currencyLabel={currencyLabel} />
               </div>
-              <div className="w-full shrink-0 p-3">
-                <h3 className="mb-2 text-[11px] font-mono uppercase tracking-wider text-muted">Drawdown - Rulebook Thresholds</h3>
+              <div className="w-full shrink-0 px-4 pt-3 pb-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-[11px] font-mono uppercase tracking-wider text-muted">Drawdown vs Rulebook</h3>
+                  <span className={cn("text-[11px] font-mono", drawdownClass)}>{fmtPct(summary.drawdown, 2)}</span>
+                </div>
                 <DrawdownChart
                   key={`carousel-dd-${String(drawdownDefensive)}-${String(drawdownHardStop)}`}
                   data={series}
@@ -1367,12 +1373,22 @@ export default function DashboardPage() {
                   hardStopThreshold={drawdownHardStop}
                 />
               </div>
-              <div className="w-full shrink-0 p-3">
-                <h3 className="mb-2 text-[11px] font-mono uppercase tracking-wider text-muted">Rolling Alpha</h3>
+              <div className="w-full shrink-0 px-4 pt-3 pb-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-[11px] font-mono uppercase tracking-wider text-muted">Rolling Alpha</h3>
+                  <span className={cn("text-[11px] font-mono", signedClass(summary.rolling_4w_alpha))}>
+                    {fmtPct(summary.rolling_4w_alpha, 2)} 4w
+                  </span>
+                </div>
                 <AlphaChart data={series} />
               </div>
-              <div className="w-full shrink-0 p-3">
-                <h3 className="mb-2 text-[11px] font-mono uppercase tracking-wider text-muted">Rolling 8W Volatility</h3>
+              <div className="w-full shrink-0 px-4 pt-3 pb-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-[11px] font-mono uppercase tracking-wider text-muted">Rolling 8W Volatility</h3>
+                  {summary.rolling_8w_vol != null && (
+                    <span className="text-[11px] font-mono text-caution">{fmtPct(summary.rolling_8w_vol, 2)}</span>
+                  )}
+                </div>
                 <VolatilityChart
                   key={`carousel-vol-${String(volThreshold)}`}
                   data={series}
