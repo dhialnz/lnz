@@ -843,15 +843,6 @@ export default function DashboardPage() {
   );
   const holdingsTickerSet = new Set(holdingsByTicker.keys());
 
-  const dashboardValidatedTickerSet = new Set<string>();
-  for (const rec of aiSummaryRecommendationSet) {
-    const metrics = rec.supporting_metrics ?? {};
-    const yahooValidated = metrics.yahoo_validation === true;
-    if (!yahooValidated) continue;
-    const ticker = normalizeTickerToken(typeof metrics.validated_ticker === "string" ? metrics.validated_ticker : "");
-    if (ticker) dashboardValidatedTickerSet.add(ticker);
-  }
-
   const newsTickerSet = new Set<string>();
   for (const row of newsImpact?.top_impacted_holdings ?? []) {
     const ticker = normalizeTickerToken(row.ticker);
@@ -865,7 +856,6 @@ export default function DashboardPage() {
   }
 
   const allowedDashboardTickerSet = new Set<string>(Array.from(holdingsTickerSet));
-  dashboardValidatedTickerSet.forEach((ticker) => allowedDashboardTickerSet.add(ticker));
   newsTickerSet.forEach((ticker) => allowedDashboardTickerSet.add(ticker));
 
   const signalMap = new Map<
