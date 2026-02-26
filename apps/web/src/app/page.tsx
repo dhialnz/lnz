@@ -864,11 +864,9 @@ export default function DashboardPage() {
     }
   }
 
-  const allowedDashboardTickerSet = new Set<string>([
-    ...holdingsTickerSet,
-    ...dashboardValidatedTickerSet,
-    ...newsTickerSet,
-  ]);
+  const allowedDashboardTickerSet = new Set<string>(Array.from(holdingsTickerSet));
+  dashboardValidatedTickerSet.forEach((ticker) => allowedDashboardTickerSet.add(ticker));
+  newsTickerSet.forEach((ticker) => allowedDashboardTickerSet.add(ticker));
 
   const signalMap = new Map<
     string,
@@ -1166,7 +1164,7 @@ export default function DashboardPage() {
   const executionMonitor = aiExecutionRows.filter((row) => row.bucket === "Monitor").length;
 
   const watchlistRecommendationSource = recommendationRows;
-  const allowedWatchlistTickerSet = new Set<string>([...allowedDashboardTickerSet]);
+  const allowedWatchlistTickerSet = new Set<string>(Array.from(allowedDashboardTickerSet));
   const watchlistCandidateMap = new Map<
     string,
     {
