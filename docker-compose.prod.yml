@@ -90,10 +90,16 @@ services:
     environment:
       NODE_ENV: production
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     # No source volume mounts — uses image's built code
     # Build + start in a single command so the container is self-contained
-    command: sh -c "npm run build && npm start"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:3000 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     restart: unless-stopped
 
   caddy:
@@ -108,7 +114,8 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - web
+      web:
+        condition: service_healthy
     environment:
       LNZ_DOMAIN: ${LNZ_DOMAIN:-localhost}
 
