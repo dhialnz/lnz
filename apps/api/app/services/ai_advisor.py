@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import asyncio
+import copy
+import hashlib
 import json
 import logging
 import re
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -30,6 +34,10 @@ _IMPORTANT_NEWS_LIMIT = 20
 _LLM_HOLDINGS_LIMIT = 16
 _LLM_NEWS_LIMIT = 16
 _RECOMMENDATION_TICKER_LIMIT = 32
+_AI_CONTEXT_CACHE_TTL_S = 20.0
+_AI_RESULT_CACHE_TTL_S = 180.0
+_LLM_TIMEOUT_S = 45.0
+_LLM_MAX_ATTEMPTS = 2
 _TICKER_PATTERN = re.compile(r"\b[A-Z]{1,5}(?:\.[A-Z]{1,2})?\b")
 _TICKER_STOPWORDS = {
     "BUY",
@@ -95,9 +103,64 @@ _SECTOR_OVERRIDES: dict[str, str] = {
 _DEFENSIVE_SECTORS = {"fixed_income", "metals", "healthcare", "utilities", "consumer_staples"}
 _GROWTH_SECTORS = {"technology", "consumer", "industrials", "financials", "emerging", "communication"}
 
+_context_cache_lock = asyncio.Lock()
+_context_cache: tuple[float, dict[str, Any]] | None = None
+_ai_result_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+
 
 def _utc_now() -> datetime:
     return datetime.now(tz=timezone.utc)
+
+
+def _context_fingerprint(context: dict[str, Any]) -> str:
+    payload = {
+        "summary": context.get("summary"),
+        "risk_profile": context.get("risk_profile"),
+        "thresholds": context.get("thresholds"),
+        "holdings_as_of": (context.get("holdings_snapshot") or {}).get("as_of"),
+        "holdings": [
+            {
+                "ticker": h.get("ticker"),
+                "weight": h.get("weight"),
+                "unrealized_pnl_pct": h.get("unrealized_pnl_pct"),
+                "day_change_pct": h.get("day_change_pct"),
+            }
+            for h in (context.get("holdings") or [])[:24]
+        ],
+        "top_news": [
+            {
+                "headline": n.get("headline"),
+                "source": n.get("source"),
+                "captured_at": n.get("captured_at"),
+                "impact": n.get("portfolio_impact_score"),
+            }
+            for n in (context.get("news_events") or [])[:24]
+        ],
+    }
+    try:
+        raw = json.dumps(payload, sort_keys=True, default=str)
+    except Exception:
+        raw = str(payload)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _ai_result_cache_get(key: str) -> dict[str, Any] | None:
+    cached = _ai_result_cache.get(key)
+    if not cached:
+        return None
+    expires_at, value = cached
+    if time.monotonic() >= expires_at:
+        _ai_result_cache.pop(key, None)
+        return None
+    return copy.deepcopy(value)
+
+
+def _ai_result_cache_set(key: str, value: dict[str, Any]) -> None:
+    _ai_result_cache[key] = (time.monotonic() + _AI_RESULT_CACHE_TTL_S, copy.deepcopy(value))
+
+
+def _ai_result_cache_key(task: str, provider: str, model: str, context: dict[str, Any]) -> str:
+    return f"{task}:{provider}:{model}:{_context_fingerprint(context)}"
 
 
 def resolve_ai_provider() -> tuple[str, str]:
@@ -118,11 +181,11 @@ def resolve_ai_provider() -> tuple[str, str]:
             return ("gemini", settings.GEMINI_MODEL)
         return ("deterministic", "deterministic-v1")
 
-    # auto mode: prefer Gemini first for low-cost/free operation.
-    if settings.GEMINI_API_KEY:
-        return ("gemini", settings.GEMINI_MODEL)
     if settings.OPENAI_API_KEY:
         return ("openai", settings.OPENAI_MODEL)
+    # auto mode fallback: use Gemini when OpenAI is not configured.
+    if settings.GEMINI_API_KEY:
+        return ("gemini", settings.GEMINI_MODEL)
     return ("deterministic", "deterministic-v1")
 
 
@@ -1022,57 +1085,72 @@ async def _validate_and_enrich_recommendations_with_yahoo(
 
 
 async def build_ai_context(db: Session) -> dict[str, Any]:
-    holdings_snapshot = await get_holdings(db=db)
-    holdings = holdings_snapshot.holdings
+    global _context_cache
 
-    series_rows = db.query(PortfolioSeries).order_by(PortfolioSeries.date).all()
-    summary = _build_portfolio_summary(series_rows)
-    series_tail = _series_tail(series_rows)
+    now = time.monotonic()
+    cached = _context_cache
+    if cached and cached[0] > now:
+        return copy.deepcopy(cached[1])
 
-    rulebook = db.query(Rulebook).first()
-    thresholds = dict((rulebook.thresholds if rulebook else {}) or {})
-    risk_profile = _risk_profile_from_thresholds(thresholds)
+    async with _context_cache_lock:
+        now = time.monotonic()
+        cached = _context_cache
+        if cached and cached[0] > now:
+            return copy.deepcopy(cached[1])
 
-    news_rows = db.query(NewsEvent).order_by(NewsEvent.captured_at.desc()).limit(80).all()
-    news_events = [_to_event_dict(r) for r in news_rows]
-    impacted_events: list[dict[str, Any]] = []
-    for e in news_events:
-        impact = impact_for_event(e, holdings)
-        impacted_events.append({**e, **impact})
-    impacted_events.sort(
-        key=lambda e: (
-            float(e.get("portfolio_impact_score") or 0.0),
-            float(e.get("rank_score") or 0.0),
-            e.get("captured_at") or "",
-        ),
-        reverse=True,
-    )
-    impacted_events = impacted_events[:40]
-    top_impacted_holdings = aggregate_top_impacted(impacted_events, top_n=12)
-    important_sources = _important_news_sources(impacted_events, limit=_IMPORTANT_NEWS_LIMIT)
-    holdings_snapshot_dict = holdings_snapshot.model_dump()
+        holdings_snapshot = await get_holdings(db=db)
+        holdings = holdings_snapshot.holdings
 
-    return {
-        "generated_at": _utc_now().isoformat(),
-        "summary": summary,
-        "series_tail": series_tail,
-        "holdings_snapshot": holdings_snapshot_dict,
-        "holdings": [h.model_dump() for h in holdings],
-        "holdings_totals": {
-            "total_value": holdings_snapshot_dict.get("total_value"),
-            "total_cost_basis": holdings_snapshot_dict.get("total_cost_basis"),
-            "total_unrealized_pnl": holdings_snapshot_dict.get("total_unrealized_pnl"),
-            "total_unrealized_pnl_pct": holdings_snapshot_dict.get("total_unrealized_pnl_pct"),
-            "total_day_change": holdings_snapshot_dict.get("total_day_change"),
-            "total_day_change_pct": holdings_snapshot_dict.get("total_day_change_pct"),
-        },
-        "thresholds": thresholds,
-        "risk_profile": risk_profile,
-        "risk_policy": _risk_policy_from_context({"thresholds": thresholds, "risk_profile": risk_profile}),
-        "news_events": impacted_events,
-        "top_impacted_holdings": top_impacted_holdings,
-        "important_sources": important_sources,
-    }
+        series_rows = db.query(PortfolioSeries).order_by(PortfolioSeries.date).all()
+        summary = _build_portfolio_summary(series_rows)
+        series_tail = _series_tail(series_rows)
+
+        rulebook = db.query(Rulebook).first()
+        thresholds = dict((rulebook.thresholds if rulebook else {}) or {})
+        risk_profile = _risk_profile_from_thresholds(thresholds)
+
+        news_rows = db.query(NewsEvent).order_by(NewsEvent.captured_at.desc()).limit(80).all()
+        news_events = [_to_event_dict(r) for r in news_rows]
+        impacted_events: list[dict[str, Any]] = []
+        for e in news_events:
+            impact = impact_for_event(e, holdings)
+            impacted_events.append({**e, **impact})
+        impacted_events.sort(
+            key=lambda e: (
+                float(e.get("portfolio_impact_score") or 0.0),
+                float(e.get("rank_score") or 0.0),
+                e.get("captured_at") or "",
+            ),
+            reverse=True,
+        )
+        impacted_events = impacted_events[:40]
+        top_impacted_holdings = aggregate_top_impacted(impacted_events, top_n=12)
+        important_sources = _important_news_sources(impacted_events, limit=_IMPORTANT_NEWS_LIMIT)
+        holdings_snapshot_dict = holdings_snapshot.model_dump()
+
+        built_context = {
+            "generated_at": _utc_now().isoformat(),
+            "summary": summary,
+            "series_tail": series_tail,
+            "holdings_snapshot": holdings_snapshot_dict,
+            "holdings": [h.model_dump() for h in holdings],
+            "holdings_totals": {
+                "total_value": holdings_snapshot_dict.get("total_value"),
+                "total_cost_basis": holdings_snapshot_dict.get("total_cost_basis"),
+                "total_unrealized_pnl": holdings_snapshot_dict.get("total_unrealized_pnl"),
+                "total_unrealized_pnl_pct": holdings_snapshot_dict.get("total_unrealized_pnl_pct"),
+                "total_day_change": holdings_snapshot_dict.get("total_day_change"),
+                "total_day_change_pct": holdings_snapshot_dict.get("total_day_change_pct"),
+            },
+            "thresholds": thresholds,
+            "risk_profile": risk_profile,
+            "risk_policy": _risk_policy_from_context({"thresholds": thresholds, "risk_profile": risk_profile}),
+            "news_events": impacted_events,
+            "top_impacted_holdings": top_impacted_holdings,
+            "important_sources": important_sources,
+        }
+        _context_cache = (time.monotonic() + _AI_CONTEXT_CACHE_TTL_S, built_context)
+        return copy.deepcopy(built_context)
 
 
 def _deterministic_suggestions(context: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1425,26 +1503,64 @@ async def _llm_chat(
     if json_mode and provider == "openai":
         payload["response_format"] = {"type": "json_object"}
 
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            res = await client.post(url, headers=headers, json=payload)
-            res.raise_for_status()
-            data = res.json()
-            text = _extract_text_content(data)
-            logger.debug("LLM call succeeded: provider=%s model=%s task=%s", provider, model, task)
-            return text, provider, model
-    except httpx.TimeoutException:
-        logger.warning("LLM call timed out: provider=%s model=%s task=%s", provider, model, task)
-        return None, provider, model
-    except httpx.HTTPStatusError as exc:
-        logger.warning(
-            "LLM HTTP error: provider=%s model=%s task=%s status=%d",
-            provider, model, task, exc.response.status_code,
-        )
-        return None, provider, model
-    except Exception as exc:
-        logger.error("LLM call failed unexpectedly: provider=%s task=%s error=%s", provider, task, exc)
-        return None, provider, model
+    def _is_retryable_status(status_code: int) -> bool:
+        return status_code in {408, 409, 425, 429, 500, 502, 503, 504}
+
+    for attempt in range(1, _LLM_MAX_ATTEMPTS + 1):
+        try:
+            async with httpx.AsyncClient(timeout=_LLM_TIMEOUT_S) as client:
+                res = await client.post(url, headers=headers, json=payload)
+                res.raise_for_status()
+                data = res.json()
+                text = _extract_text_content(data)
+                logger.debug(
+                    "LLM call succeeded: provider=%s model=%s task=%s attempt=%d",
+                    provider, model, task, attempt,
+                )
+                return text, provider, model
+        except httpx.TimeoutException:
+            logger.warning(
+                "LLM call timed out: provider=%s model=%s task=%s attempt=%d timeout=%.1fs",
+                provider,
+                model,
+                task,
+                attempt,
+                _LLM_TIMEOUT_S,
+            )
+            if attempt < _LLM_MAX_ATTEMPTS:
+                await asyncio.sleep(0.8 * attempt)
+                continue
+            return None, provider, model
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            body = (exc.response.text or "").strip().replace("\n", " ")[:260]
+            logger.warning(
+                "LLM HTTP error: provider=%s model=%s task=%s status=%d attempt=%d body=%s",
+                provider,
+                model,
+                task,
+                status,
+                attempt,
+                body,
+            )
+            if attempt < _LLM_MAX_ATTEMPTS and _is_retryable_status(status):
+                await asyncio.sleep(0.9 * attempt)
+                continue
+            return None, provider, model
+        except Exception as exc:
+            logger.error(
+                "LLM call failed unexpectedly: provider=%s model=%s task=%s attempt=%d error=%s",
+                provider,
+                model,
+                task,
+                attempt,
+                exc,
+            )
+            if attempt < _LLM_MAX_ATTEMPTS:
+                await asyncio.sleep(0.7 * attempt)
+                continue
+            return None, provider, model
+    return None, provider, model
 
 
 _VALID_SIGNAL_TYPES = {"momentum", "fundamental", "news", "regime", "concentration", "diversification", "stop_loss", "profit_taking", "steady"}
@@ -1590,8 +1706,13 @@ async def generate_portfolio_insights(context: dict[str, Any]) -> dict[str, Any]
     baseline = _deterministic_insights(context)
     portfolio_signals = _compute_portfolio_signals(context)
     change_lens = _portfolio_change_lens_text(context, portfolio_signals)
-    provider, _ = resolve_ai_provider()
+    provider, model = _resolve_provider_model("insights")
+    cache_key = _ai_result_cache_key("insights", provider, model, context)
+    cached = _ai_result_cache_get(cache_key)
+    if cached:
+        return cached
     if provider == "deterministic":
+        _ai_result_cache_set(cache_key, baseline)
         return baseline
 
     # Sanitize user-controlled fields before embedding in LLM prompt.
@@ -1639,10 +1760,12 @@ async def generate_portfolio_insights(context: dict[str, Any]) -> dict[str, Any]
     ]
     raw, _, used_model = await _llm_chat(messages, json_mode=True, task="insights")
     if not raw:
+        _ai_result_cache_set(cache_key, baseline)
         return baseline
 
     parsed = _extract_json_object(raw)
     if not parsed:
+        _ai_result_cache_set(cache_key, baseline)
         return baseline
 
     suggestions = _safe_suggestions(parsed.get("suggestions"))
@@ -1656,7 +1779,7 @@ async def generate_portfolio_insights(context: dict[str, Any]) -> dict[str, Any]
     if change_lens and change_lens not in parsed_summary:
         parsed_summary = f"{parsed_summary} {change_lens}".strip()
 
-    return {
+    result = {
         "generated_at": _utc_now(),
         "used_ai": True,
         "model": used_model,
@@ -1667,6 +1790,8 @@ async def generate_portfolio_insights(context: dict[str, Any]) -> dict[str, Any]
         "watchlist": clean_watchlist or baseline["watchlist"],
         "sources": baseline["sources"],
     }
+    _ai_result_cache_set(cache_key, result)
+    return result
 
 
 def _fallback_chat_reply(context: dict[str, Any], message: str) -> tuple[str, list[str]]:
@@ -1900,14 +2025,20 @@ async def generate_dashboard_recommendations(context: dict[str, Any]) -> dict[st
     baseline_recs = await _validate_and_enrich_recommendations_with_yahoo(baseline_raw)
     if not baseline_recs:
         baseline_recs = baseline_raw
-    provider, _ = resolve_ai_provider()
+    provider, model = _resolve_provider_model("dashboard")
+    cache_key = _ai_result_cache_key("dashboard", provider, model, context)
+    cached = _ai_result_cache_get(cache_key)
+    if cached:
+        return cached
     if provider == "deterministic":
-        return {
+        result = {
             "generated_at": _utc_now(),
             "used_ai": False,
             "model": "deterministic-v1",
             "recommendations": baseline_recs,
         }
+        _ai_result_cache_set(cache_key, result)
+        return result
 
     compact_context = {
         "summary": context.get("summary"),
@@ -1952,21 +2083,25 @@ async def generate_dashboard_recommendations(context: dict[str, Any]) -> dict[st
     ]
     raw, _, used_model = await _llm_chat(messages, json_mode=True, task="dashboard")
     if not raw:
-        return {
+        result = {
             "generated_at": _utc_now(),
             "used_ai": False,
             "model": "deterministic-v1",
             "recommendations": baseline_recs,
         }
+        _ai_result_cache_set(cache_key, result)
+        return result
 
     parsed = _extract_json_object(raw)
     if not parsed:
-        return {
+        result = {
             "generated_at": _utc_now(),
             "used_ai": False,
             "model": "deterministic-v1",
             "recommendations": baseline_recs,
         }
+        _ai_result_cache_set(cache_key, result)
+        return result
     recs_raw = _coerce_dashboard_recommendations(parsed.get("recommendations") or parsed.get("recs"))
     if not recs_raw:
         recs = baseline_recs
@@ -1974,16 +2109,22 @@ async def generate_dashboard_recommendations(context: dict[str, Any]) -> dict[st
         recs = await _validate_and_enrich_recommendations_with_yahoo(recs_raw)
         if not recs:
             recs = baseline_recs
-    return {
+    result = {
         "generated_at": _utc_now(),
         "used_ai": True,
         "model": used_model,
         "recommendations": recs,
     }
+    _ai_result_cache_set(cache_key, result)
+    return result
 
 
 async def generate_news_summary(context: dict[str, Any]) -> dict[str, Any]:
-    provider, _ = resolve_ai_provider()
+    provider, model = _resolve_provider_model("news")
+    cache_key = _ai_result_cache_key("news", provider, model, context)
+    cached = _ai_result_cache_get(cache_key)
+    if cached:
+        return cached
     top_news = list(context.get("news_events") or [])[:12]
     top_impacted = list(context.get("top_impacted_holdings") or [])[:10]
     summary = context.get("summary") or {}
@@ -2013,7 +2154,9 @@ async def generate_news_summary(context: dict[str, Any]) -> dict[str, Any]:
 
     if provider == "deterministic":
         text = _deterministic_news_text()
-        return {"generated_at": _utc_now(), "used_ai": False, "model": "deterministic-v1", "summary": text}
+        result = {"generated_at": _utc_now(), "used_ai": False, "model": "deterministic-v1", "summary": text}
+        _ai_result_cache_set(cache_key, result)
+        return result
 
     prompt_payload = {
         "portfolio_summary": {
@@ -2059,5 +2202,9 @@ async def generate_news_summary(context: dict[str, Any]) -> dict[str, Any]:
     raw, _, used_model = await _llm_chat(messages, json_mode=False, task="news")
     if not raw:
         text = _deterministic_news_text()
-        return {"generated_at": _utc_now(), "used_ai": False, "model": "deterministic-v1", "summary": text}
-    return {"generated_at": _utc_now(), "used_ai": True, "model": used_model, "summary": raw.strip()}
+        result = {"generated_at": _utc_now(), "used_ai": False, "model": "deterministic-v1", "summary": text}
+        _ai_result_cache_set(cache_key, result)
+        return result
+    result = {"generated_at": _utc_now(), "used_ai": True, "model": used_model, "summary": raw.strip()}
+    _ai_result_cache_set(cache_key, result)
+    return result

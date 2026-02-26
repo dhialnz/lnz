@@ -3,7 +3,6 @@
 import {
   getAIDashboardRecommendations,
   getAINewsSummary,
-  getRecommendations,
   getAIStatus,
   getPortfolioInsights,
 } from "@/lib/api";
@@ -296,60 +295,71 @@ export async function startGlobalAIPrewarm(force = false): Promise<void> {
 
     const maxRounds = 3;
     for (let round = 1; round <= maxRounds; round += 1) {
+      const tasks: Promise<void>[] = [];
+
       if (!dashboardReady) {
-        const dashboard = await withRetries(() => getAIDashboardRecommendations(), 2, 800);
-        if (dashboard.ok) {
-          writeLatestDashboardRecommendations(dashboard.value.recommendations, dashboard.value.model);
-          dashboardReady = true;
-          dashboardError = "";
-        } else {
-          dashboardError = dashboard.error;
-          const dashboardCached = readLatestDashboardRecommendations();
-          dashboardReady = Boolean(
-            dashboardCached &&
-              Array.isArray(dashboardCached.recommendations) &&
-              dashboardCached.recommendations.length > 0,
-          );
-          if (!dashboardReady) {
-            const rulesFallback = await withRetries(() => getRecommendations(), 2, 600);
-            if (rulesFallback.ok && Array.isArray(rulesFallback.value) && rulesFallback.value.length > 0) {
-              writeLatestDashboardRecommendations(rulesFallback.value, "rules-fallback");
+        tasks.push(
+          (async () => {
+            const dashboard = await withRetries(() => getAIDashboardRecommendations(), 2, 700);
+            if (dashboard.ok) {
+              writeLatestDashboardRecommendations(dashboard.value.recommendations, dashboard.value.model);
               dashboardReady = true;
-            } else if (!rulesFallback.ok) {
-              dashboardError = `${dashboardError}; fallback: ${rulesFallback.error}`;
+              dashboardError = "";
+              return;
             }
-          }
-        }
+            dashboardError = dashboard.error;
+            const dashboardCached = readLatestDashboardRecommendations();
+            dashboardReady = Boolean(
+              dashboardCached &&
+                Array.isArray(dashboardCached.recommendations) &&
+                dashboardCached.recommendations.length > 0,
+            );
+          })(),
+        );
       }
 
       if (!newsReady) {
-        const news = await withRetries(() => getAINewsSummary(), 2, 800);
-        if (news.ok) {
-          writeLatestNewsSummary(news.value.summary, news.value.model);
-          newsReady = true;
-          newsError = "";
-        } else {
-          newsError = news.error;
-          const newsCached = readLatestNewsSummary();
-          newsReady = Boolean(newsCached && typeof newsCached.text === "string" && newsCached.text.trim().length > 0);
-        }
+        tasks.push(
+          (async () => {
+            const news = await withRetries(() => getAINewsSummary(), 2, 700);
+            if (news.ok) {
+              writeLatestNewsSummary(news.value.summary, news.value.model);
+              newsReady = true;
+              newsError = "";
+              return;
+            }
+            newsError = news.error;
+            const newsCached = readLatestNewsSummary();
+            newsReady = Boolean(
+              newsCached && typeof newsCached.text === "string" && newsCached.text.trim().length > 0,
+            );
+          })(),
+        );
       }
 
       if (!assistantReady) {
-        const assistant = await withRetries(() => getPortfolioInsights(), 2, 800);
-        if (assistant.ok) {
-          writeLatestAssistantInsights(assistant.value, assistant.value.model);
-          assistantReady = true;
-          assistantError = "";
-        } else {
-          assistantError = assistant.error;
-          const assistantCached = readLatestAssistantInsights();
-          assistantReady = Boolean(
-            assistantCached &&
-              typeof assistantCached.summary === "string" &&
-              assistantCached.summary.trim().length > 0,
-          );
-        }
+        tasks.push(
+          (async () => {
+            const assistant = await withRetries(() => getPortfolioInsights(), 2, 700);
+            if (assistant.ok) {
+              writeLatestAssistantInsights(assistant.value, assistant.value.model);
+              assistantReady = true;
+              assistantError = "";
+              return;
+            }
+            assistantError = assistant.error;
+            const assistantCached = readLatestAssistantInsights();
+            assistantReady = Boolean(
+              assistantCached &&
+                typeof assistantCached.summary === "string" &&
+                assistantCached.summary.trim().length > 0,
+            );
+          })(),
+        );
+      }
+
+      if (tasks.length > 0) {
+        await Promise.all(tasks);
       }
 
       patchState({
