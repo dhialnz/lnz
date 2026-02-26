@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Alphenzi — Institutional-grade portfolio intelligence</title>
+  <meta name="description" content="Weekly alpha vs SPY, AI news impact mapped to your holdings, and a portfolio-aware AI copilot. For serious self-directed investors. Without the Bloomberg price tag." />
+  <meta property="og:title" content="Alphenzi — Institutional-grade portfolio intelligence" />
+  <meta property="og:description" content="The alpha tracker your brokerage won't build you." />
+  <meta property="og:type" content="website" />
+  <meta name="theme-color" content="#0A0A0B" />
+
+  <!-- Fonts: Fraunces (display, distinctive) · DM Mono (data) · Instrument Serif (brand) · Inter (body) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,300;1,9..144,400&family=DM+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ─── Reset ──────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    /* ─── Design tokens ──────────────────────────────────────── */
+    :root {
+      --bg:           #0A0A0B;
+      --panel:        #141417;
+      --panel-deep:   #0e0e10;
+      --border:       #1F1F23;
+      --border-hi:    #2a2a30;
+      --muted:        #6B6B70;
+      --subtle:       #ADADB0;
+      --text:         #E8E8EC;
+      --white:        #ffffff;
+      --accent:       #FF5C00;
+      --accent-soft:  #FF8A4C;
+      --positive:     #22C55E;
+      --negative:     #EF4444;
+      --caution:      #F97316;
+    }
+
+    /* ─── Base ───────────────────────────────────────────────── */
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+      min-height: 100vh;
+    }
+
+    /* Subtle noise texture */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.6;
+    }
+
+    /* ─── Type scale ─────────────────────────────────────────── */
+    .display {
+      font-family: 'Fraunces', Georgia, serif;
+      font-weight: 600;
+      line-height: 1.06;
+      letter-spacing: -0.025em;
+    }
+    .brand { font-family: 'Instrument Serif', Georgia, serif; font-style: italic; }
+    .mono  { font-family: 'DM Mono', 'Courier New', monospace; }
+
+    /* ─── Layout ─────────────────────────────────────────────── */
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+
+    /* ─── Keyframes ──────────────────────────────────────────── */
+    @keyframes fadeUp   { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes fadeIn   { from { opacity:0; } to { opacity:1; } }
+    @keyframes slide    { 0% { transform:translateX(0); } 100% { transform:translateX(-50%); } }
+    @keyframes blink    { 0%,100% { opacity:1; } 50% { opacity:0; } }
+    @keyframes glow     { 0%,100% { box-shadow:0 0 0 0 rgba(34,197,94,.4); } 60% { box-shadow:0 0 0 7px rgba(34,197,94,0); } }
+    @keyframes rise     { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes shimmer  { 0% { background-position:200% center; } 100% { background-position:-200% center; } }
+
+    .fu   { animation: fadeUp 0.65s ease both; }
+    .d1   { animation-delay: 0.08s; }
+    .d2   { animation-delay: 0.18s; }
+    .d3   { animation-delay: 0.30s; }
+    .d4   { animation-delay: 0.44s; }
+    .d5   { animation-delay: 0.58s; }
+
+    /* ─── Navigation ─────────────────────────────────────────── */
+    nav {
+      position: sticky; top: 0; z-index: 200;
+      border-bottom: 1px solid var(--border);
+      background: rgba(10,10,11,0.88);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+    .nav-row {
+      display: flex; align-items: center; justify-content: space-between;
+      height: 58px;
+    }
+    .nav-logo { font-family:'Instrument Serif',Georgia,serif; font-style:italic; font-size:22px; color:var(--white); text-decoration:none; }
+    .nav-logo b { color:var(--accent); font-style:normal; font-weight:400; }
+    .nav-links { display:flex; align-items:center; gap:28px; list-style:none; }
+    .nav-links a { font-size:13px; font-weight:500; color:var(--muted); text-decoration:none; transition:color .15s; }
+    .nav-links a:hover { color:var(--text); }
+    .btn-nav {
+      display:inline-flex; align-items:center; gap:6px;
+      padding:8px 18px; border-radius:8px;
+      font-size:13px; font-weight:600;
+      background:var(--accent); color:#fff; text-decoration:none;
+      transition:all .15s;
+    }
+    .btn-nav:hover { filter:brightness(1.1); }
+
+    /* ─── Hero ───────────────────────────────────────────────── */
+    .hero {
+      position: relative;
+      padding: 92px 0 80px;
+      overflow: hidden;
+    }
+    /* Atmospheric glows */
+    .hero-glow-l {
+      position:absolute; top:-160px; left:-160px; width:640px; height:640px;
+      background:radial-gradient(circle, rgba(255,92,0,0.09) 0%, transparent 65%);
+      pointer-events:none;
+    }
+    .hero-glow-r {
+      position:absolute; bottom:-80px; right:-80px; width:480px; height:480px;
+      background:radial-gradient(circle, rgba(34,197,94,0.05) 0%, transparent 65%);
+      pointer-events:none;
+    }
+    /* Dot grid */
+    .hero-grid {
+      position:absolute; inset:0;
+      background-image: radial-gradient(circle, rgba(255,255,255,0.028) 1px, transparent 1px);
+      background-size: 28px 28px;
+      pointer-events:none;
+    }
+    .hero-inner {
+      display:grid; grid-template-columns:1fr 1fr; gap:56px; align-items:center;
+    }
+    .hero-tag {
+      display:inline-flex; align-items:center; gap:8px;
+      padding:5px 14px; border-radius:100px;
+      border:1px solid rgba(255,92,0,0.3); background:rgba(255,92,0,0.08);
+      font-family:'DM Mono',monospace; font-size:11px; font-weight:500;
+      color:var(--accent-soft); margin-bottom:22px;
+    }
+    .blink-dot { width:6px; height:6px; border-radius:50%; background:var(--accent); animation:blink 1.8s ease-in-out infinite; }
+    .hero-h1 {
+      font-size: clamp(36px, 4.8vw, 62px);
+      color: var(--white); margin-bottom: 22px;
+    }
+    .hero-h1 em { font-style:italic; color:var(--accent); }
+    .hero-sub {
+      font-size:17px; line-height:1.7; color:var(--subtle);
+      margin-bottom:36px; max-width:460px;
+    }
+    .ctas { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+
+    .btn-primary {
+      display:inline-flex; align-items:center; gap:8px;
+      padding:13px 26px; border-radius:10px;
+      background:var(--accent); color:#fff;
+      font-size:15px; font-weight:600; text-decoration:none;
+      box-shadow:0 4px 28px rgba(255,92,0,0.3);
+      transition:all .15s;
+    }
+    .btn-primary:hover { filter:brightness(1.1); box-shadow:0 6px 36px rgba(255,92,0,0.4); transform:translateY(-1px); }
+
+    .btn-ghost {
+      display:inline-flex; align-items:center; gap:8px;
+      padding:13px 24px; border-radius:10px;
+      border:1px solid var(--border-hi); background:transparent;
+      color:var(--subtle); font-size:15px; font-weight:500; text-decoration:none;
+      transition:all .15s;
+    }
+    .btn-ghost:hover { border-color:var(--muted); color:var(--text); }
+
+    /* ─── Dashboard mockup ────────────────────────────────────── */
+    .mock-wrap { position:relative; }
+    .mock-aura {
+      position:absolute; inset:-50px;
+      background:radial-gradient(ellipse at 50% 40%, rgba(255,92,0,0.1) 0%, transparent 68%);
+      pointer-events:none;
+    }
+    .mock {
+      position:relative;
+      background:var(--panel);
+      border:1px solid var(--border-hi);
+      border-radius:16px;
+      padding:20px;
+      box-shadow:0 32px 80px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.02) inset;
+      animation: fadeUp 0.7s ease 0.2s both;
+    }
+    .mock-top {
+      display:flex; align-items:center; justify-content:space-between;
+      padding-bottom:14px; margin-bottom:16px;
+      border-bottom:1px solid var(--border);
+    }
+    .mock-title { font-family:'DM Mono',monospace; font-size:9.5px; font-weight:500; color:var(--muted); text-transform:uppercase; letter-spacing:.09em; }
+    .mock-live { display:flex; align-items:center; gap:5px; font-family:'DM Mono',monospace; font-size:10px; color:var(--positive); }
+    .live-dot { width:5px; height:5px; border-radius:50%; background:var(--positive); animation:glow 2s ease-in-out infinite; }
+
+    /* 3-metric row */
+    .mock-metrics { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:14px; }
+    .mock-m {
+      padding:10px 10px 8px;
+      background:rgba(255,255,255,0.02);
+      border:1px solid var(--border);
+      border-radius:8px;
+    }
+    .mock-m-lbl { font-family:'DM Mono',monospace; font-size:8.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-bottom:5px; }
+    .mock-m-val { font-family:'DM Mono',monospace; font-size:14px; font-weight:500; color:var(--white); }
+    .pos { color:var(--positive) !important; }
+    .neg { color:var(--negative) !important; }
+    .acc { color:var(--accent) !important; }
+
+    /* Mini SVG chart */
+    .mock-chart {
+      position:relative; height:54px; margin-bottom:12px;
+      background:rgba(255,255,255,0.01); border:1px solid var(--border);
+      border-radius:8px; overflow:hidden;
+    }
+    .mock-chart svg { position:absolute; inset:0; width:100%; height:100%; }
+
+    /* Holdings rows */
+    .mock-rows { display:flex; flex-direction:column; gap:5px; margin-bottom:12px; }
+    .mock-row {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:7px 10px;
+      background:rgba(255,255,255,0.015); border:1px solid var(--border);
+      border-radius:6px;
+      animation: rise 0.45s ease both;
+    }
+    .mock-row:nth-child(2) { animation-delay:.1s; }
+    .mock-row:nth-child(3) { animation-delay:.2s; }
+    .mock-ticker { font-family:'DM Mono',monospace; font-size:11px; font-weight:500; color:var(--white); }
+    .mock-wt { font-family:'DM Mono',monospace; font-size:10px; color:var(--muted); }
+    .mock-chg { font-family:'DM Mono',monospace; font-size:11px; font-weight:500; }
+
+    /* AI insight */
+    .mock-ai {
+      padding:10px 12px;
+      background:rgba(255,92,0,0.07); border:1px solid rgba(255,92,0,0.2);
+      border-radius:8px;
+    }
+    .mock-ai-lbl { font-family:'DM Mono',monospace; font-size:9px; color:var(--accent-soft); text-transform:uppercase; letter-spacing:.07em; margin-bottom:5px; }
+    .mock-ai-txt { font-size:11.5px; line-height:1.55; color:var(--subtle); }
+
+    /* ─── Ticker strip ────────────────────────────────────────── */
+    .ticker { border-top:1px solid var(--border); border-bottom:1px solid var(--border); background:var(--panel-deep); padding:12px 0; overflow:hidden; }
+    .ticker-inner { display:flex; white-space:nowrap; animation:slide 28s linear infinite; }
+    .t-item {
+      display:inline-flex; align-items:center; gap:10px;
+      padding:0 28px;
+      font-family:'DM Mono',monospace; font-size:12px; color:var(--muted);
+    }
+    .t-item::after { content:'·'; color:var(--border-hi); margin-left:4px; }
+    .t-item .hi { color:var(--accent-soft); }
+
+    /* ─── Sections ───────────────────────────────────────────── */
+    section { padding:100px 0; }
+    .sec-label {
+      display:inline-block; font-family:'DM Mono',monospace;
+      font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:.1em;
+      color:var(--accent); margin-bottom:16px;
+    }
+    .sec-h { font-size:clamp(28px,4vw,44px); color:var(--white); margin-bottom:16px; }
+    .sec-sub { font-size:17px; line-height:1.65; color:var(--subtle); max-width:540px; }
+
+    /* ─── Features grid ──────────────────────────────────────── */
+    .feat-grid {
+      display:grid; grid-template-columns:repeat(3,1fr);
+      gap:1px; background:var(--border);
+      border:1px solid var(--border); border-radius:16px;
+      overflow:hidden; margin-top:56px;
+    }
+    .feat {
+      background:var(--panel); padding:32px 26px;
+      transition:background .2s;
+    }
+    .feat:hover { background:#18181c; }
+    .feat-icon {
+      width:40px; height:40px; border-radius:10px;
+      background:rgba(255,92,0,0.1); border:1px solid rgba(255,92,0,0.22);
+      display:flex; align-items:center; justify-content:center;
+      margin-bottom:18px; color:var(--accent); flex-shrink:0;
+    }
+    .feat-h { font-size:15px; font-weight:600; color:var(--white); margin-bottom:9px; }
+    .feat-p { font-size:13.5px; line-height:1.65; color:var(--muted); }
+
+    /* ─── Steps ──────────────────────────────────────────────── */
+    .steps { display:grid; grid-template-columns:repeat(3,1fr); gap:48px; margin-top:60px; }
+    .step-num {
+      font-family:'Fraunces',Georgia,serif; font-weight:300;
+      font-size:68px; line-height:1;
+      color:rgba(255,92,0,0.13); margin-bottom:14px;
+    }
+    .step-h { font-size:17px; font-weight:600; color:var(--white); margin-bottom:9px; }
+    .step-p { font-size:14px; line-height:1.7; color:var(--muted); }
+    /* connector line between steps */
+    .steps .step:not(:last-child) { position:relative; }
+
+    /* ─── Compare table ──────────────────────────────────────── */
+    .cmp-wrap { overflow-x:auto; margin-top:48px; }
+    table {
+      width:100%; border-collapse:separate; border-spacing:0;
+      border:1px solid var(--border); border-radius:12px;
+      overflow:hidden; font-size:13px;
+    }
+    thead th {
+      padding:13px 18px; text-align:left;
+      background:rgba(255,255,255,0.02);
+      border-bottom:1px solid var(--border);
+      font-family:'DM Mono',monospace; font-size:10.5px;
+      font-weight:500; text-transform:uppercase; letter-spacing:.06em;
+      color:var(--muted); white-space:nowrap;
+    }
+    thead th.a { color:var(--accent); background:rgba(255,92,0,0.05); }
+    tbody td { padding:12px 18px; border-bottom:1px solid var(--border); color:var(--subtle); }
+    tbody tr:last-child td { border-bottom:none; }
+    tbody td.a { background:rgba(255,92,0,0.03); color:var(--text); font-weight:500; }
+    tbody td.fn { color:var(--text); font-weight:500; }
+    .ck { color:var(--positive); font-weight:700; }
+    .cx { color:rgba(255,255,255,0.12); }
+    .pt { color:var(--caution); }
+
+    /* ─── Pricing ────────────────────────────────────────────── */
+    .price-grid {
+      display:grid; grid-template-columns:repeat(3,1fr); gap:18px;
+      margin-top:52px;
+    }
+    .price-card {
+      background:var(--panel); border:1px solid var(--border);
+      border-radius:16px; padding:28px 22px; position:relative;
+      transition:border-color .2s;
+    }
+    .price-card:hover { border-color:var(--border-hi); }
+    .price-card.hot {
+      border-color:var(--accent);
+      background:linear-gradient(180deg, rgba(255,92,0,0.07) 0%, var(--panel) 55%);
+    }
+    .price-badge {
+      position:absolute; top:-11px; left:50%; transform:translateX(-50%);
+      padding:3px 14px; background:var(--accent); border-radius:100px;
+      font-size:11px; font-weight:700; color:#fff; white-space:nowrap;
+    }
+    .price-tier { font-family:'DM Mono',monospace; font-size:10.5px; font-weight:500; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:3px; }
+    .price-name { font-size:18px; font-weight:700; color:var(--white); margin-bottom:20px; }
+    .price-amt-row { display:flex; align-items:baseline; gap:6px; margin-bottom:4px; }
+    .price-amt { font-family:'Fraunces',Georgia,serif; font-size:42px; font-weight:600; color:var(--white); line-height:1; }
+    .price-per { font-size:14px; color:var(--muted); }
+    .price-annual { font-family:'DM Mono',monospace; font-size:11.5px; color:var(--positive); margin-bottom:22px; }
+    .price-div { border:none; border-top:1px solid var(--border); margin:18px 0; }
+    .price-feats { list-style:none; display:flex; flex-direction:column; gap:9px; margin-bottom:26px; }
+    .price-feats li { display:flex; align-items:flex-start; gap:9px; font-size:13px; color:var(--subtle); line-height:1.45; }
+    .price-feats li::before { content:'✓'; color:var(--positive); font-weight:700; flex-shrink:0; }
+    .price-cta {
+      display:block; text-align:center; padding:11px 18px;
+      border-radius:9px; font-size:14px; font-weight:600;
+      text-decoration:none; transition:all .15s;
+    }
+    .price-cta.main { background:var(--accent); color:#fff; box-shadow:0 4px 20px rgba(255,92,0,0.22); }
+    .price-cta.main:hover { filter:brightness(1.1); box-shadow:0 6px 28px rgba(255,92,0,0.32); }
+    .price-cta.outline { border:1px solid var(--border-hi); color:var(--subtle); }
+    .price-cta.outline:hover { border-color:var(--muted); color:var(--text); }
+    .self-host-note {
+      margin-top:24px; padding:18px 22px; text-align:center;
+      border:1px solid var(--border); border-radius:12px; background:var(--panel);
+      font-size:14px; color:var(--muted);
+    }
+    .self-host-note strong { color:var(--subtle); }
+    .self-host-note a { color:var(--accent); text-decoration:none; }
+    .self-host-note a:hover { text-decoration:underline; }
+
+    /* ─── FAQ ────────────────────────────────────────────────── */
+    .faq-list { display:flex; flex-direction:column; gap:2px; margin-top:44px; border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+    details { background:var(--panel); border-bottom:1px solid var(--border); }
+    details:last-child { border-bottom:none; }
+    summary {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:19px 22px; font-size:15px; font-weight:500; color:var(--text);
+      cursor:pointer; list-style:none; user-select:none;
+      transition:color .15s;
+    }
+    summary:hover { color:var(--white); }
+    summary::-webkit-details-marker { display:none; }
+    summary::after { content:'+'; font-size:22px; color:var(--muted); font-weight:300; transition:transform .2s; flex-shrink:0; }
+    details[open] summary::after { transform:rotate(45deg); color:var(--accent); }
+    .faq-body { padding:0 22px 20px; font-size:14px; line-height:1.75; color:var(--muted); }
+    .faq-body em { color:var(--subtle); font-style:normal; }
+
+    /* ─── Final CTA ──────────────────────────────────────────── */
+    .final-cta {
+      position:relative; text-align:center;
+      padding:128px 0; overflow:hidden;
+    }
+    .final-cta::before {
+      content:''; position:absolute; top:50%; left:50%;
+      transform:translate(-50%,-50%); width:700px; height:700px;
+      background:radial-gradient(circle, rgba(255,92,0,0.09) 0%, transparent 65%);
+      pointer-events:none;
+    }
+    .cta-eyebrow { font-family:'DM Mono',monospace; font-size:11.5px; color:var(--accent); text-transform:uppercase; letter-spacing:.1em; margin-bottom:20px; }
+    .cta-h {
+      font-size:clamp(34px,5.5vw,60px); color:var(--white);
+      margin-bottom:20px; max-width:680px; margin-left:auto; margin-right:auto;
+    }
+    .cta-sub { font-size:17px; color:var(--subtle); margin-bottom:40px; }
+
+    /* ─── Footer ─────────────────────────────────────────────── */
+    footer {
+      border-top:1px solid var(--border); padding:44px 0;
+    }
+    .foot-row { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px; }
+    .foot-logo { font-family:'Instrument Serif',Georgia,serif; font-style:italic; font-size:20px; color:var(--white); }
+    .foot-logo b { color:var(--accent); font-style:normal; font-weight:400; }
+    .foot-links { display:flex; gap:22px; list-style:none; }
+    .foot-links a { font-size:13px; color:var(--muted); text-decoration:none; transition:color .15s; }
+    .foot-links a:hover { color:var(--text); }
+    .foot-copy { font-family:'DM Mono',monospace; font-size:12px; color:var(--muted); }
+
+    /* ─── Responsive ─────────────────────────────────────────── */
+    @media (max-width: 960px) {
+      .hero-inner { grid-template-columns:1fr; }
+      .mock-wrap { display:none; }
+      .feat-grid { grid-template-columns:repeat(2,1fr); }
+      .steps { grid-template-columns:1fr; gap:36px; }
+      .price-grid { grid-template-columns:1fr; max-width:400px; margin-left:auto; margin-right:auto; }
+      .nav-links { display:none; }
+    }
+    @media (max-width: 640px) {
+      section { padding:64px 0; }
+      .feat-grid { grid-template-columns:1fr; }
+      thead th:nth-child(3), thead th:nth-child(4), thead th:nth-child(5),
+      tbody td:nth-child(3), tbody td:nth-child(4), tbody td:nth-child(5) { display:none; }
+    }
+  </style>
+</head>
+
+<body>
+
+<!-- ═══════════════════ NAV ════════════════════════════════════════════════ -->
+<nav>
+  <div class="wrap nav-row">
+    <a href="/" class="nav-logo">Alphenzi<b>.</b></a>
+    <ul class="nav-links">
+      <li><a href="#features">Features</a></li>
+      <li><a href="#how-it-works">How it works</a></li>
+      <li><a href="#pricing">Pricing</a></li>
+      <li><a href="#faq">FAQ</a></li>
+    </ul>
+    <a href="https://app.alphenzi.com" class="btn-nav">Launch App →</a>
+  </div>
+</nav>
+
+<!-- ═══════════════════ HERO ══════════════════════════════════════════════ -->
+<section class="hero">
+  <div class="hero-glow-l"></div>
+  <div class="hero-glow-r"></div>
+  <div class="hero-grid"></div>
+
+  <div class="wrap">
+    <div class="hero-inner">
+
+      <!-- Left: copy -->
+      <div>
+        <div class="hero-tag fu">
+          <span class="blink-dot"></span>
+          Now in early access
+        </div>
+
+        <h1 class="display hero-h1 fu d1">
+          The alpha tracker<br>
+          your brokerage<br>
+          <em>won't build you.</em>
+        </h1>
+
+        <p class="hero-sub fu d2">
+          Weekly SPY-relative alpha, AI news impact mapped to your exact holdings,
+          and a portfolio-aware copilot that knows your risk rules —
+          for serious self-directed investors.
+        </p>
+
+        <div class="ctas fu d3">
+          <a href="https://app.alphenzi.com" class="btn-primary">
+            Start free — no card needed
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </a>
+          <a href="#how-it-works" class="btn-ghost">See how it works</a>
+        </div>
+      </div>
+
+      <!-- Right: dashboard mockup -->
+      <div class="mock-wrap fu d2">
+        <div class="mock-aura"></div>
+        <div class="mock">
+
+          <div class="mock-top">
+            <span class="mock-title">Weekly Alpha Command Center</span>
+            <span class="mock-live"><span class="live-dot"></span>LIVE</span>
+          </div>
+
+          <!-- 3 metrics -->
+          <div class="mock-metrics">
+            <div class="mock-m">
+              <div class="mock-m-lbl">Portfolio</div>
+              <div class="mock-m-val acc">CA$248k</div>
+            </div>
+            <div class="mock-m">
+              <div class="mock-m-lbl">Weekly α</div>
+              <div class="mock-m-val pos">+1.47%</div>
+            </div>
+            <div class="mock-m">
+              <div class="mock-m-lbl">Drawdown</div>
+              <div class="mock-m-val neg">−2.1%</div>
+            </div>
+          </div>
+
+          <!-- Mini chart (SVG, pure CSS) -->
+          <div class="mock-chart">
+            <svg viewBox="0 0 320 54" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="cg" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#22C55E" stop-opacity="0.22"/>
+                  <stop offset="100%" stop-color="#22C55E" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              <path d="M0,42 C20,40 40,38 60,36 S100,26 120,22 S160,18 180,16 S220,11 240,9 S280,7 320,5"
+                    fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round"/>
+              <path d="M0,42 C20,40 40,38 60,36 S100,26 120,22 S160,18 180,16 S220,11 240,9 S280,7 320,5 L320,54 L0,54 Z"
+                    fill="url(#cg)"/>
+              <!-- Dashed peak line -->
+              <path d="M0,30 C60,28 120,16 180,14 S260,10 320,8"
+                    fill="none" stroke="rgba(34,197,94,0.25)" stroke-width="1" stroke-dasharray="4 3"/>
+            </svg>
+          </div>
+
+          <!-- Holdings rows -->
+          <div class="mock-rows">
+            <div class="mock-row">
+              <span class="mock-ticker">NVDA</span>
+              <span class="mock-wt">18.2%</span>
+              <span class="mock-chg pos">+3.21%</span>
+            </div>
+            <div class="mock-row">
+              <span class="mock-ticker">AAPL</span>
+              <span class="mock-wt">12.4%</span>
+              <span class="mock-chg pos">+1.09%</span>
+            </div>
+            <div class="mock-row">
+              <span class="mock-ticker">XBB.TO</span>
+              <span class="mock-wt">9.1%</span>
+              <span class="mock-chg neg">−0.42%</span>
+            </div>
+          </div>
+
+          <!-- AI insight -->
+          <div class="mock-ai">
+            <div class="mock-ai-lbl">AI Copilot · This week</div>
+            <div class="mock-ai-txt">NVDA concentration at 18.2% exceeds trim threshold. Semiconductor news cycle positive — consider scaling into weakness if &gt;5% pullback.</div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ TICKER STRIP ══════════════════════════════════════ -->
+<div class="ticker">
+  <div class="ticker-inner">
+    <span class="t-item">Weekly Alpha <span class="hi">vs SPY</span></span>
+    <span class="t-item">AI Portfolio Copilot</span>
+    <span class="t-item">News Impact Mapping</span>
+    <span class="t-item">Personalized Risk Rulebook</span>
+    <span class="t-item">CAD / USD <span class="hi">Dual Currency</span></span>
+    <span class="t-item">Excel Import</span>
+    <span class="t-item">Drawdown Monitoring</span>
+    <span class="t-item">Concentration Risk Alerts</span>
+    <span class="t-item">Self-Hosted Privacy</span>
+    <span class="t-item">8W Volatility Budget</span>
+    <span class="t-item">Relative Strength <span class="hi">vs Benchmark</span></span>
+    <!-- duplicate for seamless loop -->
+    <span class="t-item">Weekly Alpha <span class="hi">vs SPY</span></span>
+    <span class="t-item">AI Portfolio Copilot</span>
+    <span class="t-item">News Impact Mapping</span>
+    <span class="t-item">Personalized Risk Rulebook</span>
+    <span class="t-item">CAD / USD <span class="hi">Dual Currency</span></span>
+    <span class="t-item">Excel Import</span>
+    <span class="t-item">Drawdown Monitoring</span>
+    <span class="t-item">Concentration Risk Alerts</span>
+    <span class="t-item">Self-Hosted Privacy</span>
+    <span class="t-item">8W Volatility Budget</span>
+    <span class="t-item">Relative Strength <span class="hi">vs Benchmark</span></span>
+  </div>
+</div>
+
+<!-- ═══════════════════ FEATURES ══════════════════════════════════════════ -->
+<section id="features">
+  <div class="wrap">
+    <div style="max-width:580px">
+      <span class="sec-label">Features</span>
+      <h2 class="display sec-h">Everything your brokerage withholds.</h2>
+      <p class="sec-sub">The analytics institutional desks use to make real decisions — now at a price that fits a serious self-directed investor.</p>
+    </div>
+
+    <div class="feat-grid">
+
+      <div class="feat">
+        <div class="feat-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
+          </svg>
+        </div>
+        <h3 class="feat-h">Weekly Alpha vs SPY</h3>
+        <p class="feat-p">Track outperformance relative to S&P 500 every week. 4-week rolling alpha, cumulative alpha, regime classification, and drawdown vs your personalized stop thresholds.</p>
+      </div>
+
+      <div class="feat">
+        <div class="feat-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/>
+          </svg>
+        </div>
+        <h3 class="feat-h">AI News Impact Mapping</h3>
+        <p class="feat-p">Every earnings release, analyst upgrade, and macro shock is scored against your exact holdings. Know when news actually moves your portfolio before the week closes.</p>
+      </div>
+
+      <div class="feat">
+        <div class="feat-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+        </div>
+        <h3 class="feat-h">Portfolio-Aware AI Copilot</h3>
+        <p class="feat-p">An AI that knows your specific holdings, risk thresholds, and weekly performance — not a generic chatbot. Ask it anything about your portfolio and get grounded, specific answers.</p>
+      </div>
+
+      <div class="feat">
+        <div class="feat-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+        </div>
+        <h3 class="feat-h">Personalized Risk Rulebook</h3>
+        <p class="feat-p">Set your own defensive drawdown thresholds, concentration trim limits, and volatility budget. The dashboard surfaces alerts when you breach your own rules — not generic warnings.</p>
+      </div>
+
+      <div class="feat">
+        <div class="feat-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+          </svg>
+        </div>
+        <h3 class="feat-h">CAD/USD Dual Currency</h3>
+        <p class="feat-p">Manage cross-border portfolios with real-time FX conversion. Track TSX and NYSE holdings side-by-side with live CAD/USD rates — rare in this space.</p>
+      </div>
+
+      <div class="feat">
+        <div class="feat-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+        </div>
+        <h3 class="feat-h">Privacy-First & Self-Hostable</h3>
+        <p class="feat-p">Your financial data never leaves your machine. Deploy on your own server with Docker — open-source MIT core. Or use our managed hosted version.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ HOW IT WORKS ══════════════════════════════════════ -->
+<section id="how-it-works" style="background:linear-gradient(180deg,#0d0d0f 0%,var(--bg) 100%)">
+  <div class="wrap">
+    <span class="sec-label">How it works</span>
+    <h2 class="display sec-h">Up and running in minutes.</h2>
+    <p class="sec-sub">No Bloomberg terminal. No financial analyst degree. Just your existing portfolio data and five minutes on a Monday morning.</p>
+
+    <div class="steps">
+      <div>
+        <div class="step-num">01</div>
+        <h3 class="step-h">Import your portfolio</h3>
+        <p class="step-p">Upload an Excel file, paste CSV, or enter holdings manually. Alphenzi parses your positions, cost basis, and purchase dates automatically — including legacy spreadsheet formats.</p>
+      </div>
+      <div>
+        <div class="step-num">02</div>
+        <h3 class="step-h">Run the weekly dashboard</h3>
+        <p class="step-p">Hit refresh Monday morning. Live Yahoo Finance prices are fetched, alpha vs SPY is calculated, drawdown is measured against your thresholds, and your full risk board populates — in seconds.</p>
+      </div>
+      <div>
+        <div class="step-num">03</div>
+        <h3 class="step-h">Let AI surface what matters</h3>
+        <p class="step-p">The AI pipeline reads your portfolio, recent news, and risk state to generate prioritized recommendations, a portfolio brief, and a buy watchlist — all grounded in your own data.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ COMPARISON ════════════════════════════════════════ -->
+<section style="background:var(--panel-deep)">
+  <div class="wrap">
+    <span class="sec-label">vs the alternatives</span>
+    <h2 class="display sec-h">Without the $25k/year price tag.</h2>
+    <p class="sec-sub">The features that used to require a Bloomberg subscription or a full-time quant — at a price built for individual investors.</p>
+
+    <div class="cmp-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th class="a">Alphenzi</th>
+            <th>Robinhood / Wealthsimple</th>
+            <th>Sharesight</th>
+            <th>Koyfin</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="fn">Weekly alpha vs SPY</td>
+            <td class="a ck">✓</td>
+            <td class="cx">—</td>
+            <td class="cx">—</td>
+            <td class="cx">—</td>
+          </tr>
+          <tr>
+            <td class="fn">Portfolio-aware AI copilot</td>
+            <td class="a ck">✓</td>
+            <td class="cx">—</td>
+            <td class="cx">—</td>
+            <td class="pt">Partial</td>
+          </tr>
+          <tr>
+            <td class="fn">News mapped to your holdings</td>
+            <td class="a ck">✓</td>
+            <td class="cx">—</td>
+            <td class="cx">—</td>
+            <td class="cx">—</td>
+          </tr>
+          <tr>
+            <td class="fn">Risk rulebook / personal thresholds</td>
+            <td class="a ck">✓</td>
+            <td class="cx">—</td>
+            <td class="cx">—</td>
+            <td class="cx">—</td>
+          </tr>
+          <tr>
+            <td class="fn">CAD/USD dual currency</td>
+            <td class="a ck">✓</td>
+            <td class="pt">Partial</td>
+            <td class="ck">✓</td>
+            <td class="pt">Partial</td>
+          </tr>
+          <tr>
+            <td class="fn">Excel / CSV import</td>
+            <td class="a ck">✓</td>
+            <td class="cx">—</td>
+            <td class="pt">Partial</td>
+            <td class="cx">—</td>
+          </tr>
+          <tr>
+            <td class="fn">Self-hosted / privacy-first</td>
+            <td class="a ck">✓</td>
+            <td class="cx">—</td>
+            <td class="cx">—</td>
+            <td class="cx">—</td>
+          </tr>
+          <tr>
+            <td class="fn">Price (Pro tier)</td>
+            <td class="a" style="color:var(--positive);font-family:'DM Mono',monospace">$19/mo</td>
+            <td>Free</td>
+            <td>$13/mo</td>
+            <td>$49/mo</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ PRICING ═══════════════════════════════════════════ -->
+<section id="pricing">
+  <div class="wrap">
+    <div style="text-align:center;max-width:560px;margin:0 auto">
+      <span class="sec-label">Pricing</span>
+      <h2 class="display sec-h">Intelligence, not a subscription to intelligence.</h2>
+      <p class="sec-sub" style="margin:0 auto">Start free. Upgrade when it earns its keep.</p>
+    </div>
+
+    <div class="price-grid">
+
+      <!-- Free -->
+      <div class="price-card">
+        <div class="price-tier">Free</div>
+        <div class="price-name">Observer</div>
+        <div class="price-amt-row">
+          <span class="price-amt">$0</span>
+          <span class="price-per">forever</span>
+        </div>
+        <div class="price-annual" style="color:var(--muted)">No credit card required</div>
+        <hr class="price-div">
+        <ul class="price-feats">
+          <li>Up to 5 holdings</li>
+          <li>Weekly dashboard (deterministic metrics)</li>
+          <li>Drawdown &amp; alpha tracking</li>
+          <li>Risk rulebook (default thresholds)</li>
+          <li>CAD/USD live prices</li>
+          <li>Community support</li>
+        </ul>
+        <a href="https://app.alphenzi.com" class="price-cta outline">Get started free</a>
+      </div>
+
+      <!-- Pro -->
+      <div class="price-card hot">
+        <div class="price-badge">Most popular</div>
+        <div class="price-tier">Pro</div>
+        <div class="price-name">Analyst</div>
+        <div class="price-amt-row">
+          <span class="price-amt">$19</span>
+          <span class="price-per">/month</span>
+        </div>
+        <div class="price-annual">or $180/year — save 21%</div>
+        <hr class="price-div">
+        <ul class="price-feats">
+          <li>Unlimited holdings</li>
+          <li>Full AI weekly recommendations</li>
+          <li>AI Portfolio Copilot (unlimited)</li>
+          <li>AI news impact summary</li>
+          <li>AI buy watchlist + portfolio insights</li>
+          <li>Excel import + manual week entry</li>
+          <li>Risk quiz + custom rulebook</li>
+          <li>Email support</li>
+        </ul>
+        <a href="https://app.alphenzi.com" class="price-cta main">Start Analyst — 14 days free</a>
+      </div>
+
+      <!-- Premium -->
+      <div class="price-card">
+        <div class="price-tier">Premium</div>
+        <div class="price-name">Command</div>
+        <div class="price-amt-row">
+          <span class="price-amt">$49</span>
+          <span class="price-per">/month</span>
+        </div>
+        <div class="price-annual">or $468/year — save 20%</div>
+        <hr class="price-div">
+        <ul class="price-feats">
+          <li>Everything in Analyst</li>
+          <li>Priority AI (GPT-4o vs mini)</li>
+          <li>Multi-portfolio (2–3 accounts)</li>
+          <li>PDF weekly report export</li>
+          <li>Read-only API access</li>
+          <li>Early feature access</li>
+          <li>Priority support — 24h SLA</li>
+        </ul>
+        <a href="https://app.alphenzi.com" class="price-cta outline">Start Command — 14 days free</a>
+      </div>
+
+    </div>
+
+    <div class="self-host-note">
+      <strong>Self-Hosted (MIT License):</strong>
+      Free forever. Bring your own API keys. One Docker command to deploy.
+      <a href="https://github.com">View on GitHub →</a>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ FAQ ════════════════════════════════════════════════ -->
+<section id="faq" style="background:linear-gradient(180deg,#0d0d0f 0%,var(--bg) 100%)">
+  <div class="wrap" style="max-width:740px;margin:0 auto">
+    <span class="sec-label">FAQ</span>
+    <h2 class="display sec-h">Questions worth asking.</h2>
+
+    <div class="faq-list">
+
+      <details open>
+        <summary>How is this different from just using my brokerage app?</summary>
+        <div class="faq-body">
+          Brokerage apps show you raw price changes. Alphenzi shows you <em>performance relative to the market</em> — alpha — and quantifies exactly how much your own decisions added or subtracted value vs simply buying SPY. It also ties news events to your specific holdings and gives you AI-powered context, not just charts.
+        </div>
+      </details>
+
+      <details>
+        <summary>Do I need to connect my brokerage account?</summary>
+        <div class="faq-body">
+          No. Alphenzi never connects to your brokerage. You upload your portfolio as an Excel/CSV file or enter holdings manually. Your account numbers, credentials, and real-time balances are never seen by Alphenzi.
+        </div>
+      </details>
+
+      <details>
+        <summary>How does the AI work? Is my data sent to OpenAI?</summary>
+        <div class="faq-body">
+          The AI features use a provider chain (Gemini → OpenAI → deterministic fallback). On the hosted version, portfolio context is sent to the AI provider you choose, with your consent. For self-hosters: you control which API you use and whether AI features are enabled at all. You can run fully deterministic (no AI) at zero cost.
+        </div>
+      </details>
+
+      <details>
+        <summary>I only have Canadian stocks and ETFs. Does this work for me?</summary>
+        <div class="faq-body">
+          Alphenzi was built with CAD-first investors in mind. It supports any TSX-listed ticker (including .TO and .V suffixes), handles real-time CAD/USD conversion, and shows values in your preferred currency. It's one of the few tools that properly handles cross-border Canadian portfolios.
+        </div>
+      </details>
+
+      <details>
+        <summary>What does "self-hosted" mean, and who is it for?</summary>
+        <div class="faq-body">
+          Self-hosted means you download the code (Docker Compose) and run it on your own server or laptop. Your data never touches our servers. It's free forever under the MIT license. It's for developers, privacy-first investors, and anyone who wants to bring their own OpenAI/Gemini API keys. The hosted version is for everyone else who wants zero setup.
+        </div>
+      </details>
+
+      <details>
+        <summary>Can I cancel anytime?</summary>
+        <div class="faq-body">
+          Yes. No contracts, no cancellation fees. Cancel from your account settings — you keep access until the end of the billing period. Your data can be exported as CSV at any time before or after cancellation.
+        </div>
+      </details>
+
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ FINAL CTA ══════════════════════════════════════════ -->
+<section class="final-cta">
+  <div class="wrap">
+    <p class="cta-eyebrow">Ready to track real alpha?</p>
+    <h2 class="display cta-h">Stop guessing.<br>Start measuring.</h2>
+    <p class="cta-sub">Free to start. No credit card. Your portfolio deserves better analytics.</p>
+    <div style="display:flex;justify-content:center;gap:14px;flex-wrap:wrap">
+      <a href="https://app.alphenzi.com" class="btn-primary" style="font-size:16px;padding:15px 32px">
+        Launch the dashboard
+        <svg width="15" height="15" viewBox="0 0 14 14" fill="none">
+          <path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ FOOTER ══════════════════════════════════════════════ -->
+<footer>
+  <div class="wrap">
+    <div class="foot-row">
+      <span class="foot-logo">Alphenzi<b>.</b></span>
+      <ul class="foot-links">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#pricing">Pricing</a></li>
+        <li><a href="https://app.alphenzi.com/disclaimer">Disclaimer</a></li>
+        <li><a href="https://app.alphenzi.com/privacy">Privacy</a></li>
+        <li><a href="https://github.com">GitHub</a></li>
+      </ul>
+      <span class="foot-copy">© 2026 Alphenzi · Not financial advice.</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

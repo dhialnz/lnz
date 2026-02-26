@@ -1,14 +1,18 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# LNZ Portfolio Analytics — Docker Compose (Production)
+# Alphenzi — Docker Compose (Production)
 #
 # Usage:
 #   docker compose -f docker-compose.prod.yml up -d --build
 #
 # Prerequisites:
 #   1. Copy .env.prod.example → .env and fill in all values
-#   2. Set LNZ_DOMAIN in .env to your domain (e.g. lnz.yourdomain.com)
-#   3. Point your domain's A record to this server's IP
-#   4. Caddy will obtain a Let's Encrypt certificate automatically on first start
+#   2. Set ALPHENZI_DOMAIN=alphenzi.com in .env
+#   3. Point alphenzi.com and app.alphenzi.com A records to this server's IP
+#   4. Caddy will obtain Let's Encrypt certificates automatically on first start
+#
+# Routing:
+#   alphenzi.com       → static landing page (landing/index.html via Caddy)
+#   app.alphenzi.com   → Next.js app (web container on port 3000)
 #
 # Differences from development compose:
 #   - No source volume mounts — code is baked into the Docker image
@@ -57,7 +61,7 @@ services:
       OPENAI_API_KEY: ${LNZ_OPENAI_API_KEY:-}
       OPENAI_MODEL: ${LNZ_OPENAI_MODEL:-gpt-4o-mini}
       OPENAI_BASE_URL: ${LNZ_OPENAI_BASE_URL:-https://api.openai.com/v1}
-      CORS_ORIGINS: ${CORS_ORIGINS:-https://${LNZ_DOMAIN}}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://app.${ALPHENZI_DOMAIN}}
       MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-10}
       HIDE_DOCS: "true"
       LNZ_API_KEY: ${LNZ_API_KEY:-}
@@ -111,16 +115,19 @@ services:
       - "443:443/udp"    # HTTP/3
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./landing:/srv/landing:ro
       - caddy_data:/data
       - caddy_config:/config
+      - caddy_logs:/var/log/caddy
     depends_on:
       web:
         condition: service_healthy
     environment:
-      LNZ_DOMAIN: ${LNZ_DOMAIN:-localhost}
+      ALPHENZI_DOMAIN: ${ALPHENZI_DOMAIN:-alphenzi.com}
 
 volumes:
   postgres_data:
   uploads_data:
   caddy_data:
   caddy_config:
+  caddy_logs:

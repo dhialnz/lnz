@@ -1,24 +1,55 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# LNZ Portfolio Analytics — Caddyfile
+# Alphenzi — Caddyfile
 #
-# Caddy handles automatic HTTPS via Let's Encrypt.
-# Set LNZ_DOMAIN in your .env file (e.g. lnz.yourdomain.com).
+# Two domains:
+#   alphenzi.com (+ www)  → static landing page served from /srv/landing
+#   app.alphenzi.com      → Next.js app (web container on port 3000)
 #
-# Optional: uncomment the basicauth block to add HTTP Basic Auth as an extra
-# access layer. Generate the password hash with:
-#   docker run caddy:2-alpine caddy hash-password --plaintext yourpassword
+# Caddy handles automatic HTTPS via Let's Encrypt for both.
+# Set ALPHENZI_DOMAIN=alphenzi.com in your .env file.
 # ─────────────────────────────────────────────────────────────────────────────
 
-{$LNZ_DOMAIN:localhost} {
+# ── Landing page (alphenzi.com + www redirect) ────────────────────────────
+{$ALPHENZI_DOMAIN:alphenzi.com}, www.{$ALPHENZI_DOMAIN:alphenzi.com} {
+
+  # Redirect www → apex
+  @www host www.{$ALPHENZI_DOMAIN:alphenzi.com}
+  redir @www https://{$ALPHENZI_DOMAIN:alphenzi.com}{uri} permanent
+
+  # Serve static landing page
+  root * /srv/landing
+  file_server
+
+  encode gzip
+
+  header {
+    X-Frame-Options DENY
+    X-Content-Type-Options nosniff
+    Referrer-Policy strict-origin-when-cross-origin
+    X-XSS-Protection "1; mode=block"
+    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    Cache-Control "public, max-age=3600"
+    -Server
+  }
+
+  log {
+    output file /var/log/caddy/landing.log {
+      roll_size 10mb
+      roll_keep 5
+    }
+    format json
+  }
+}
+
+# ── App (app.alphenzi.com) ────────────────────────────────────────────────
+app.{$ALPHENZI_DOMAIN:alphenzi.com} {
 
   # Reverse proxy all traffic to the Next.js app.
   # Next.js internally rewrites /api/v1/* → http://api:8000/api/v1/*
   reverse_proxy web:3000
 
-  # Gzip compression
   encode gzip
 
-  # Security headers (Next.js also sets these; belt-and-suspenders)
   header {
     X-Frame-Options DENY
     X-Content-Type-Options nosniff
@@ -28,17 +59,13 @@
     -Server
   }
 
-  # Optional HTTP Basic Auth — uncomment and configure to restrict access
-  # to the entire app beyond the API-key layer.
-  #
+  # Optional HTTP Basic Auth — uncomment to add an extra access layer.
   # basicauth {
-  #   # Generate hash: docker run caddy:2-alpine caddy hash-password --plaintext yourpassword
   #   admin $2a$14$REPLACE_WITH_YOUR_BCRYPT_HASH
   # }
 
-  # Logging
   log {
-    output file /var/log/caddy/access.log {
+    output file /var/log/caddy/app.log {
       roll_size 10mb
       roll_keep 5
     }
