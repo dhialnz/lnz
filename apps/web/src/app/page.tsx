@@ -501,8 +501,13 @@ function recommendationPrimaryTicker(
   );
   if (validated) return validated;
 
-  const fromHoldingsTitle = holdingsTickers ? extractTickerCandidates(rec.title, holdingsTickers)[0] : null;
-  if (fromHoldingsTitle) return fromHoldingsTitle;
+  const corpus = [rec.title, rec.explanation, ...rec.actions, ...rec.triggers].join(" ");
+
+  const fromHoldings = holdingsTickers ? extractTickerCandidates(corpus, holdingsTickers)[0] : null;
+  if (fromHoldings) return fromHoldings;
+
+  const fromAllowed = extractTickerCandidates(corpus, allowedTickers)[0];
+  if (fromAllowed) return fromAllowed;
 
   const fromTitle = extractTickerCandidates(rec.title, allowedTickers)[0];
   return fromTitle ?? null;
@@ -842,6 +847,14 @@ export default function DashboardPage() {
     (holdingsSnapshot?.holdings ?? []).map((holding) => [holding.ticker.toUpperCase(), holding]),
   );
   const holdingsTickerSet = new Set(holdingsByTicker.keys());
+  const dashboardValidatedTickerSet = new Set<string>();
+  for (const rec of aiSummaryRecommendationSet) {
+    const metrics = rec.supporting_metrics ?? {};
+    const yahooValidated = metrics.yahoo_validation === true;
+    if (!yahooValidated) continue;
+    const ticker = normalizeTickerToken(typeof metrics.validated_ticker === "string" ? metrics.validated_ticker : "");
+    if (ticker) dashboardValidatedTickerSet.add(ticker);
+  }
 
   const newsTickerSet = new Set<string>();
   for (const row of newsImpact?.top_impacted_holdings ?? []) {
@@ -856,6 +869,7 @@ export default function DashboardPage() {
   }
 
   const allowedDashboardTickerSet = new Set<string>(Array.from(holdingsTickerSet));
+  dashboardValidatedTickerSet.forEach((ticker) => allowedDashboardTickerSet.add(ticker));
   newsTickerSet.forEach((ticker) => allowedDashboardTickerSet.add(ticker));
 
   const signalMap = new Map<
@@ -985,18 +999,11 @@ export default function DashboardPage() {
   ].filter(Boolean);
   const drawdownSubtitle = drawdownSubtitleParts.length > 0 ? drawdownSubtitleParts.join(" • ") : undefined;
 
-  const rawRecommendationRows = aiPipelineReady
+  const recommendationRows = aiPipelineReady
     ? aiSummaryRecommendationSet.length > 0
       ? aiSummaryRecommendationSet
       : recs
     : [];
-  const recommendationRows = rawRecommendationRows.filter((rec) => {
-    const primaryTicker = recommendationPrimaryTicker(rec, allowedDashboardTickerSet, holdingsTickerSet);
-    if (primaryTicker) return true;
-    const lines = [rec.title, rec.explanation, ...rec.actions, ...rec.triggers];
-    const hasTickerLikeToken = lines.some((line) => ((line.toUpperCase().match(TICKER_PATTERN) ?? []).length > 0));
-    return !hasTickerLikeToken;
-  });
 
   const maxWeightHolding = (holdingsSnapshot?.holdings ?? [])
     .slice()
@@ -1107,8 +1114,7 @@ export default function DashboardPage() {
 
   const aiExecutionRows: AIExecutionRow[] = recommendationRows
     .map((rec, index) => {
-      const ticker = recommendationPrimaryTicker(rec, allowedDashboardTickerSet, holdingsTickerSet);
-      if (!ticker) return null;
+      const ticker = recommendationPrimaryTicker(rec, allowedDashboardTickerSet, holdingsTickerSet) ?? "PORT";
       const intent = recommendationIntent(rec);
       const action: AIExecutionRow["action"] = intent === "sell" ? "TRIM" : intent === "buy" ? "BUY" : "HOLD";
       const impactSignal = aiHoldingImpactRows.find((row) => row.ticker === ticker) ?? null;
@@ -1146,14 +1152,13 @@ export default function DashboardPage() {
         source: impactSignal?.source ? `Dashboard AI + ${impactSignal.source}` : "Dashboard AI",
       };
     })
-    .filter((row): row is AIExecutionRow => row !== null)
     .sort((a, b) => b.urgency - a.urgency)
     .slice(0, 8);
   const executionActNow = aiExecutionRows.filter((row) => row.bucket === "Act Now").length;
   const executionThisWeek = aiExecutionRows.filter((row) => row.bucket === "This Week").length;
   const executionMonitor = aiExecutionRows.filter((row) => row.bucket === "Monitor").length;
 
-  const watchlistRecommendationSource = recommendationRows;
+  const watchlistRecommendationSource = aiPipelineReady ? aiSummaryRecommendationSet : [];
   const allowedWatchlistTickerSet = new Set<string>(Array.from(allowedDashboardTickerSet));
   const watchlistCandidateMap = new Map<
     string,

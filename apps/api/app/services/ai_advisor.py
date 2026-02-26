@@ -38,7 +38,7 @@ _AI_CONTEXT_CACHE_TTL_S = 20.0
 _AI_RESULT_CACHE_TTL_S = 180.0
 _LLM_TIMEOUT_S = 45.0
 _LLM_MAX_ATTEMPTS = 2
-_TICKER_PATTERN = re.compile(r"\b[A-Z]{1,5}(?:\.[A-Z]{1,2})?\b")
+_TICKER_PATTERN = re.compile(r"\b[A-Z]{2,5}(?:\.[A-Z]{1,2})?\b")
 _TICKER_STOPWORDS = {
     "BUY",
     "SELL",
@@ -53,6 +53,20 @@ _TICKER_STOPWORDS = {
     "NOW",
     "LOW",
     "HIGH",
+    "BETA",
+    "THE",
+    "FOR",
+    "WITH",
+    "FROM",
+    "THIS",
+    "THAT",
+    "INTO",
+    "OVER",
+    "UNDER",
+    "RISK",
+    "WEEK",
+    "MONITOR",
+    "ACT",
 }
 _BUY_WORDS = ("buy", "add", "accumulate", "initiate", "overweight", "long")
 _SELL_WORDS = ("sell", "trim", "reduce", "exit", "underweight", "de-risk", "derisk")
@@ -856,7 +870,7 @@ def _extract_ticker_candidates(text: str) -> list[str]:
         return []
     out: list[str] = []
     seen: set[str] = set()
-    for match in _TICKER_PATTERN.findall(text.upper()):
+    for match in _TICKER_PATTERN.findall(text):
         if match in _TICKER_STOPWORDS:
             continue
         if match in seen:
