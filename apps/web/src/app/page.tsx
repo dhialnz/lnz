@@ -1084,41 +1084,121 @@ export default function DashboardPage() {
   const executionMonitor = aiExecutionRows.filter((row) => row.bucket === "Monitor").length;
 
   const watchlistRecommendationSource = aiPipelineReady ? aiSummaryRecommendationSet : [];
-  const watchlistRows = watchlistRecommendationSource
-    .filter((rec) => recommendationIntent(rec) === "buy")
-    .map((rec) => {
-      const metrics = rec.supporting_metrics ?? {};
-      const yahooValidated = metrics.yahoo_validation === true;
-      if (!yahooValidated) return null;
-      const ticker = recommendationPrimaryTicker(rec);
-      if (!ticker) return null;
+  const watchlistCandidateMap = new Map<
+    string,
+    {
+      ticker: string;
+      conviction: number;
+      reason: string;
+      source: string;
+      technical: string;
+      fundamental: string;
+      validated: boolean;
+      signal: number;
+    }
+  >();
+  const upsertWatchlistCandidate = (candidate: {
+    ticker: string;
+    conviction: number;
+    reason: string;
+    source: string;
+    technical?: string;
+    fundamental?: string;
+    validated?: boolean;
+  }) => {
+    const ticker = String(candidate.ticker || "").trim().toUpperCase();
+    if (!ticker || TICKER_STOPWORDS.has(ticker)) return;
+    const normalizedTicker = extractTickerCandidates(ticker)[0] ?? ticker;
+    if (!normalizedTicker) return;
 
-      const rsi14 = metricNumber(metrics.rsi14);
-      const ma20GapPct = metricNumber(metrics.ma20_gap_pct);
-      const momentum20Pct = metricNumber(metrics.momentum_20d_pct);
-      const trailingPe = metricNumber(metrics.trailing_pe);
-      const forwardPe = metricNumber(metrics.forward_pe);
+    const conviction = Math.max(20, Math.min(95, Math.round(candidate.conviction)));
+    const validated = candidate.validated === true;
+    const signal = conviction + (validated ? 14 : 0);
+    const existing = watchlistCandidateMap.get(normalizedTicker);
+    if (!existing || signal > existing.signal || (validated && !existing.validated)) {
+      watchlistCandidateMap.set(normalizedTicker, {
+        ticker: normalizedTicker,
+        conviction,
+        reason: candidate.reason,
+        source: candidate.source,
+        technical: candidate.technical ?? existing?.technical ?? "",
+        fundamental: candidate.fundamental ?? existing?.fundamental ?? "",
+        validated,
+        signal,
+      });
+    }
+  };
 
-      const technical: string[] = [];
-      if (rsi14 != null) technical.push(`RSI14 ${rsi14.toFixed(1)}`);
-      if (ma20GapPct != null) technical.push(`vs MA20 ${fmtPct(ma20GapPct, 2)}`);
-      if (momentum20Pct != null) technical.push(`20d ${fmtPct(momentum20Pct, 2)}`);
+  for (const rec of watchlistRecommendationSource) {
+    if (recommendationIntent(rec) !== "buy") continue;
+    const metrics = rec.supporting_metrics ?? {};
+    const ticker = recommendationPrimaryTicker(rec) ?? extractTickerCandidates(rec.title)[0];
+    if (!ticker) continue;
 
-      const fundamental: string[] = [];
-      if (trailingPe != null) fundamental.push(`P/E ${trailingPe.toFixed(1)}`);
-      if (forwardPe != null) fundamental.push(`Fwd P/E ${forwardPe.toFixed(1)}`);
+    const rsi14 = metricNumber(metrics.rsi14);
+    const ma20GapPct = metricNumber(metrics.ma20_gap_pct);
+    const momentum20Pct = metricNumber(metrics.momentum_20d_pct);
+    const trailingPe = metricNumber(metrics.trailing_pe);
+    const forwardPe = metricNumber(metrics.forward_pe);
 
-      return {
-        ticker,
-        conviction: Math.max(20, Math.min(95, Math.round(rec.confidence * 100))),
-        reason: rec.explanation,
-        source: `AI + Yahoo`,
-        technical: technical.join(" • "),
-        fundamental: fundamental.join(" • "),
-      };
-    })
-    .filter((row): row is NonNullable<typeof row> => Boolean(row))
-    .sort((a, b) => b.conviction - a.conviction)
+    const technical: string[] = [];
+    if (rsi14 != null) technical.push(`RSI14 ${rsi14.toFixed(1)}`);
+    if (ma20GapPct != null) technical.push(`vs MA20 ${fmtPct(ma20GapPct, 2)}`);
+    if (momentum20Pct != null) technical.push(`20d ${fmtPct(momentum20Pct, 2)}`);
+
+    const fundamental: string[] = [];
+    if (trailingPe != null) fundamental.push(`P/E ${trailingPe.toFixed(1)}`);
+    if (forwardPe != null) fundamental.push(`Fwd P/E ${forwardPe.toFixed(1)}`);
+
+    const yahooValidated = metrics.yahoo_validation === true;
+    upsertWatchlistCandidate({
+      ticker,
+      conviction: rec.confidence * 100,
+      reason: rec.explanation,
+      source: yahooValidated ? "Dashboard AI + Yahoo" : "Dashboard AI (pending Yahoo)",
+      technical: technical.join(" • "),
+      fundamental: fundamental.join(" • "),
+      validated: yahooValidated,
+    });
+  }
+
+  for (const suggestion of aiInsights?.suggestions ?? []) {
+    if (suggestion.action !== "buy") continue;
+    upsertWatchlistCandidate({
+      ticker: suggestion.ticker,
+      conviction: (suggestion.confidence ?? 0.5) * 100,
+      reason: suggestion.rationale || "Copilot flagged this as a buy candidate.",
+      source: "AI Copilot",
+      fundamental:
+        suggestion.portfolio_fit_score != null
+          ? `Portfolio fit ${Math.max(0, Math.min(100, Math.round(suggestion.portfolio_fit_score)))}/100`
+          : "",
+      validated: false,
+    });
+  }
+
+  for (const ticker of aiInsights?.watchlist ?? []) {
+    upsertWatchlistCandidate({
+      ticker,
+      conviction: 56,
+      reason: "Included in AI Copilot watchlist after full context scan.",
+      source: "AI Copilot Watchlist",
+      validated: false,
+    });
+  }
+
+  for (const row of (newsImpact?.top_impacted_holdings ?? []).filter((x) => x.direction === "positive").slice(0, 8)) {
+    upsertWatchlistCandidate({
+      ticker: row.ticker,
+      conviction: row.impact_score * 55 + 28,
+      reason: row.reason || "Positive portfolio-impact news catalyst.",
+      source: "News Flow",
+      validated: false,
+    });
+  }
+
+  const watchlistRows = Array.from(watchlistCandidateMap.values())
+    .sort((a, b) => Number(b.validated) - Number(a.validated) || b.conviction - a.conviction)
     .slice(0, 6);
   const activeChart = DASHBOARD_CHARTS[chartIndex] ?? DASHBOARD_CHARTS[0];
 
@@ -1500,7 +1580,19 @@ export default function DashboardPage() {
               watchlistRows.map((row) => (
                 <div key={row.ticker + row.source} className="rounded-lg border border-border bg-[#101013] px-3 py-2">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs font-semibold text-white">{row.ticker}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs font-semibold text-white">{row.ticker}</p>
+                      <span
+                        className={cn(
+                          "rounded-full px-1.5 py-0.5 text-[10px] font-mono",
+                          row.validated
+                            ? "bg-positive/15 text-positive"
+                            : "bg-caution/15 text-caution",
+                        )}
+                      >
+                        {row.validated ? "Yahoo validated" : "Pending validation"}
+                      </span>
+                    </div>
                     <p className="text-[11px] font-mono text-accent">Conviction {row.conviction}/100</p>
                   </div>
                   <p className="mt-1 text-[10px] text-muted">{row.source}</p>
@@ -1513,7 +1605,7 @@ export default function DashboardPage() {
               <div className="rounded-lg border border-border bg-[#101013] px-3 py-2">
                 <p className="text-[11px] text-muted">
                   {aiEnabled
-                    ? "No Yahoo-validated buy signals across current AI recommendations for this cycle."
+                    ? "No buy candidates surfaced across dashboard, assistant, and news summaries for this cycle."
                     : "Enable AI API to generate AI watchlist signals."}
                 </p>
               </div>
