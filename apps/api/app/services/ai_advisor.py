@@ -63,6 +63,38 @@ _EVIDENCE_REQUEST_TERMS = (
     "show your work",
 )
 
+_SECTOR_OVERRIDES: dict[str, str] = {
+    "BND": "fixed_income",
+    "AGG": "fixed_income",
+    "LQD": "fixed_income",
+    "VEA": "international",
+    "IEMG": "emerging",
+    "XLB": "materials",
+    "XLC": "communication",
+    "XLE": "energy",
+    "XLF": "financials",
+    "XLI": "industrials",
+    "XLK": "technology",
+    "XLP": "consumer_staples",
+    "XLU": "utilities",
+    "XLV": "healthcare",
+    "XLY": "consumer",
+    "VNQ": "real_estate",
+    "QQQ": "technology",
+    "VGT": "technology",
+    "SMH": "technology",
+    "GLD": "metals",
+    "SLV": "metals",
+    "PHYS": "metals",
+    "VFV": "broad_market",
+    "SPY": "broad_market",
+    "VOO": "broad_market",
+    "VTI": "broad_market",
+    "XEQT": "broad_market",
+}
+_DEFENSIVE_SECTORS = {"fixed_income", "metals", "healthcare", "utilities", "consumer_staples"}
+_GROWTH_SECTORS = {"technology", "consumer", "industrials", "financials", "emerging", "communication"}
+
 
 def _utc_now() -> datetime:
     return datetime.now(tz=timezone.utc)
@@ -126,6 +158,169 @@ def _risk_profile_from_thresholds(thresholds: dict[str, Any]) -> str:
     if concentration <= 0.17 or hard_stop >= -0.11:
         return "Balanced"
     return "Growth"
+
+
+def _sector_for_asset(ticker: str, name: str | None = None) -> str:
+    t = (ticker or "").strip().upper()
+    if t in _SECTOR_OVERRIDES:
+        return _SECTOR_OVERRIDES[t]
+    return infer_sector_for_ticker(t, name)
+
+
+def _risk_policy_from_context(context: dict[str, Any]) -> dict[str, Any]:
+    thresholds = dict(context.get("thresholds") or {})
+    profile = str(context.get("risk_profile") or _risk_profile_from_thresholds(thresholds))
+    concentration_trim = float(thresholds.get("concentration_trim", 0.15))
+    hard_stop = float(thresholds.get("drawdown_hard_stop", -0.10))
+
+    profile_defaults = {
+        "Conservative": {
+            "buy_size_range_pct": "2-4%",
+            "defensive_floor_pct": 35.0,
+            "growth_ceiling_pct": 40.0,
+            "target_single_name_ceiling_pct": min(concentration_trim * 100.0, 11.0),
+        },
+        "Balanced": {
+            "buy_size_range_pct": "3-6%",
+            "defensive_floor_pct": 22.0,
+            "growth_ceiling_pct": 58.0,
+            "target_single_name_ceiling_pct": min(concentration_trim * 100.0, 16.0),
+        },
+        "Growth": {
+            "buy_size_range_pct": "4-8%",
+            "defensive_floor_pct": 12.0,
+            "growth_ceiling_pct": 75.0,
+            "target_single_name_ceiling_pct": min(concentration_trim * 100.0, 22.0),
+        },
+    }
+    defaults = profile_defaults.get(profile, profile_defaults["Balanced"])
+
+    return {
+        "profile": profile,
+        "concentration_trim_pct": round(concentration_trim * 100.0, 2),
+        "hard_stop_drawdown_pct": round(hard_stop * 100.0, 2),
+        "buy_size_range_pct": defaults["buy_size_range_pct"],
+        "defensive_floor_pct": defaults["defensive_floor_pct"],
+        "growth_ceiling_pct": defaults["growth_ceiling_pct"],
+        "target_single_name_ceiling_pct": defaults["target_single_name_ceiling_pct"],
+    }
+
+
+def _portfolio_exposure_snapshot(holdings: list[dict[str, Any]]) -> dict[str, Any]:
+    ticker_weights: dict[str, float] = {}
+    sector_weights: dict[str, float] = {}
+    defensive_weight = 0.0
+    growth_weight = 0.0
+
+    for h in holdings:
+        ticker = str(h.get("ticker") or "").upper()
+        if not ticker:
+            continue
+        weight = float(h.get("weight") or 0.0)
+        ticker_weights[ticker] = weight
+        sector = _sector_for_asset(ticker, h.get("name"))
+        sector_weights[sector] = sector_weights.get(sector, 0.0) + weight
+        if sector in _DEFENSIVE_SECTORS:
+            defensive_weight += weight
+        if sector in _GROWTH_SECTORS:
+            growth_weight += weight
+
+    max_ticker = ""
+    max_weight = 0.0
+    for ticker, weight in ticker_weights.items():
+        if weight > max_weight:
+            max_ticker = ticker
+            max_weight = weight
+
+    return {
+        "ticker_weights": ticker_weights,
+        "sector_weights": sector_weights,
+        "defensive_weight": defensive_weight,
+        "growth_weight": growth_weight,
+        "max_ticker": max_ticker,
+        "max_weight": max_weight,
+    }
+
+
+def _suggestion_portfolio_fit(context: dict[str, Any], suggestion: dict[str, Any]) -> dict[str, Any]:
+    holdings = list(context.get("holdings") or [])
+    thresholds = dict(context.get("thresholds") or {})
+    profile = str(context.get("risk_profile") or _risk_profile_from_thresholds(thresholds))
+    policy = _risk_policy_from_context(context)
+    exposures = _portfolio_exposure_snapshot(holdings)
+
+    action = str(suggestion.get("action") or "hold").lower()
+    ticker = str(suggestion.get("ticker") or "").upper()
+    confidence = float(suggestion.get("confidence") or 0.5)
+
+    concentration_trim = float(thresholds.get("concentration_trim", 0.15))
+    ticker_weight = float(exposures["ticker_weights"].get(ticker, 0.0))
+    sector = _sector_for_asset(ticker)
+    sector_weight = float(exposures["sector_weights"].get(sector, 0.0))
+    defensive_weight = float(exposures.get("defensive_weight") or 0.0)
+    growth_weight = float(exposures.get("growth_weight") or 0.0)
+
+    score = int(round(42 + confidence * 38))
+    role = "Portfolio maintenance"
+
+    if action == "sell":
+        role = "Concentration and downside-risk control"
+        if ticker_weight > concentration_trim:
+            score += 18
+        if str(suggestion.get("signal_type") or "") in {"concentration", "stop_loss", "news"}:
+            score += 10
+    elif action == "buy":
+        role = "Diversification and return-shape optimization"
+        if ticker_weight > 0:
+            score -= 8
+        if sector_weight < 0.10:
+            score += 12
+        if sector_weight > 0.30:
+            score -= 14
+        if profile == "Conservative":
+            if sector in _DEFENSIVE_SECTORS:
+                role = "Defensive ballast aligned to conservative policy"
+                score += 10
+            elif sector in _GROWTH_SECTORS:
+                score -= 8
+        elif profile == "Growth":
+            if sector in _GROWTH_SECTORS:
+                role = "Alpha sleeve aligned to growth policy"
+                score += 8
+            elif sector in _DEFENSIVE_SECTORS and defensive_weight > 0.30:
+                score -= 5
+    else:
+        role = "Core position stewardship"
+        if ticker_weight > concentration_trim:
+            score += 8
+
+    score = max(0, min(100, score))
+    fit_rationale = (
+        f"{ticker} is {ticker_weight * 100:.1f}% of portfolio; {sector} exposure is {sector_weight * 100:.1f}% "
+        f"(concentration trim {concentration_trim * 100:.1f}%). "
+        f"Risk profile is {profile} with target buy size {policy['buy_size_range_pct']}. "
+        f"Current mix: defensive {defensive_weight * 100:.1f}% / growth-sensitive {growth_weight * 100:.1f}%."
+    )
+
+    return {
+        "portfolio_role": role,
+        "portfolio_fit_score": score,
+        "portfolio_fit_rationale": fit_rationale[:360],
+    }
+
+
+def _apply_portfolio_fit_to_suggestions(
+    context: dict[str, Any], suggestions: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for s in suggestions:
+        if not isinstance(s, dict):
+            continue
+        fit = _suggestion_portfolio_fit(context, s)
+        row = dict(s)
+        row.update(fit)
+        out.append(row)
+    return out
 
 
 def _to_event_dict(row: NewsEvent) -> dict[str, Any]:
@@ -284,9 +479,11 @@ def _llm_context_top_news(news_events: list[dict[str, Any]], limit: int = _LLM_N
 def _llm_compact_context(context: dict[str, Any]) -> dict[str, Any]:
     holdings_snapshot = context.get("holdings_snapshot") or {}
     holdings_totals = context.get("holdings_totals") or {}
+    risk_policy = _risk_policy_from_context(context)
     return {
         "summary": context.get("summary"),
         "risk_profile": context.get("risk_profile"),
+        "risk_policy": risk_policy,
         "thresholds": context.get("thresholds"),
         "series_tail": (context.get("series_tail") or [])[-_SERIES_TAIL_LIMIT:],
         "holdings_totals": {
@@ -871,6 +1068,7 @@ async def build_ai_context(db: Session) -> dict[str, Any]:
         },
         "thresholds": thresholds,
         "risk_profile": risk_profile,
+        "risk_policy": _risk_policy_from_context({"thresholds": thresholds, "risk_profile": risk_profile}),
         "news_events": impacted_events,
         "top_impacted_holdings": top_impacted_holdings,
         "important_sources": important_sources,
@@ -880,11 +1078,17 @@ async def build_ai_context(db: Session) -> dict[str, Any]:
 def _deterministic_suggestions(context: dict[str, Any]) -> list[dict[str, Any]]:
     holdings: list[dict[str, Any]] = list(context.get("holdings") or [])
     thresholds = context.get("thresholds") or {}
+    risk_profile = str(context.get("risk_profile") or _risk_profile_from_thresholds(thresholds))
+    risk_policy = _risk_policy_from_context(context)
     concentration_trim = float(thresholds.get("concentration_trim", 0.15))
     summary = context.get("summary") or {}
     regime = str(summary.get("regime") or "Neutral")
     top_impacted = list(context.get("top_impacted_holdings") or [])
     portfolio_signals = _compute_portfolio_signals(context)
+    exposures = _portfolio_exposure_snapshot(holdings)
+    ticker_weights: dict[str, float] = dict(exposures.get("ticker_weights") or {})
+    sector_weights: dict[str, float] = dict(exposures.get("sector_weights") or {})
+    buy_size_range = str(risk_policy.get("buy_size_range_pct") or "3-6%")
 
     impacted_map: dict[str, dict[str, Any]] = {
         str(h.get("ticker") or "").upper(): h for h in top_impacted if h.get("ticker")
@@ -914,8 +1118,8 @@ def _deterministic_suggestions(context: dict[str, Any]) -> list[dict[str, Any]]:
                 "size_hint": f"Trim to below {concentration_trim * 100:.0f}%",
                 "rationale": (
                     f"{ticker} at {weight_str} of portfolio breaches your concentration rule "
-                    f"({concentration_trim * 100:.1f}% limit). Unrealized P&L: {pnl_str}. "
-                    f"Trimming reduces idiosyncratic risk."
+                    f"({concentration_trim * 100:.1f}% limit) for a {risk_profile} risk profile. "
+                    f"Unrealized P&L: {pnl_str}. Trimming reduces idiosyncratic risk."
                 ),
                 "signal_type": "concentration",
                 "time_horizon": "short",
@@ -985,68 +1189,102 @@ def _deterministic_suggestions(context: dict[str, Any]) -> list[dict[str, Any]]:
                 })
                 covered_tickers.add(ticker)
 
-    # --- BUY candidates: regime-aware diversification gaps ---
-    sector_weights: dict[str, float] = {}
-    for h in holdings:
-        sector = infer_sector_for_ticker(str(h.get("ticker") or ""), h.get("name"))
-        sector_weights[sector] = sector_weights.get(sector, 0.0) + float(h.get("weight") or 0.0)
-
+    # --- BUY candidates: risk-profile and regime aligned ---
     momentum_trend = portfolio_signals.get("momentum_trend", "flat")
+    vol_trend = str(portfolio_signals.get("volatility_trend") or "stable")
     is_defensive_regime = regime in ("Defensive",)
     is_recovery_regime = regime in ("Recovery", "Expansion")
 
-    # Regime-adjusted universe: lead with defensive assets in downturns
+    profile_universe: dict[str, list[tuple[str, str, str, str, str, int, str]]] = {
+        "Conservative": [
+            ("BND", "fixed_income", "adds bond ballast to reduce total-volatility shocks", "diversification", "long", 1, "ETF"),
+            ("XLV", "healthcare", "adds resilient healthcare cash-flow exposure", "fundamental", "long", 2, "ETF"),
+            ("XLP", "consumer_staples", "adds defensive staples for drawdown resilience", "regime", "long", 2, "ETF"),
+            ("GLD", "metals", "adds macro hedge for policy/risk-off regimes", "regime", "medium", 2, "ETF"),
+            ("JNJ", "healthcare", "adds defensive single-name quality in healthcare", "fundamental", "long", 2, "Stock"),
+            ("UNH", "healthcare", "adds high-quality managed-care compounding exposure", "fundamental", "long", 3, "Stock"),
+        ],
+        "Balanced": [
+            ("XLI", "industrials", "improves cyclical breadth with diversified industrial leaders", "diversification", "medium", 3, "ETF"),
+            ("XLF", "financials", "adds financial beta for recovery participation", "regime", "medium", 3, "ETF"),
+            ("VEA", "international", "reduces home-bias with developed ex-US diversification", "diversification", "long", 2, "ETF"),
+            ("IEMG", "emerging", "adds EM growth optionality while diversifying factor risk", "fundamental", "long", 3, "ETF"),
+            ("BND", "fixed_income", "maintains bond sleeve for portfolio shock absorption", "diversification", "long", 1, "ETF"),
+            ("MSFT", "technology", "quality mega-cap cash flow with diversified business lines", "fundamental", "long", 2, "Stock"),
+            ("JPM", "financials", "strong capital base and earnings sensitivity in upcycles", "fundamental", "medium", 3, "Stock"),
+        ],
+        "Growth": [
+            ("QQQ", "technology", "adds concentrated growth factor exposure", "regime", "medium", 4, "ETF"),
+            ("VGT", "technology", "broadens technology alpha sleeve in growth regimes", "momentum", "long", 4, "ETF"),
+            ("SMH", "technology", "targeted semiconductor beta for innovation cycle upside", "momentum", "medium", 4, "ETF"),
+            ("XLI", "industrials", "balances pure-tech risk with cyclical industrial breadth", "diversification", "medium", 3, "ETF"),
+            ("VEA", "international", "improves geographic diversification for growth portfolio", "diversification", "long", 2, "ETF"),
+            ("IEMG", "emerging", "adds EM growth convexity beyond US mega-cap concentration", "fundamental", "long", 3, "ETF"),
+            ("AMZN", "consumer", "high-operating-leverage quality growth with AI tailwind", "fundamental", "medium", 4, "Stock"),
+            ("MSFT", "technology", "durable free-cash-flow growth and platform breadth", "fundamental", "long", 3, "Stock"),
+        ],
+    }
+
+    regime_overlays: list[tuple[str, str, str, str, str, int, str]] = []
     if is_defensive_regime:
-        candidate_universe = [
-            ("BND", "fixed_income", "bond ballast reduces vol in defensive regimes", "diversification", "medium", 1),
-            ("GLD", "metals", "gold hedge strengthens in risk-off macro", "regime", "medium", 2),
-            ("XLV", "healthcare", "defensive healthcare is recession-resilient", "fundamental", "long", 2),
-            ("XLF", "financials", "financial sector adds rebalancing optionality", "diversification", "long", 3),
-            ("VEA", "international", "developed-market diversification", "diversification", "long", 2),
+        regime_overlays = [
+            ("BND", "fixed_income", "defensive regime prefers duration ballast", "regime", "medium", 1, "ETF"),
+            ("XLV", "healthcare", "defensive regime favors non-cyclical earnings", "regime", "long", 2, "ETF"),
+            ("GLD", "metals", "defensive regime often benefits hedging assets", "regime", "medium", 2, "ETF"),
+            ("XLU", "utilities", "defensive regime rewards stable utility cash flows", "regime", "long", 2, "ETF"),
         ]
     elif is_recovery_regime:
-        candidate_universe = [
-            ("XLI", "industrials", "industrials lead cyclical recoveries", "regime", "medium", 3),
-            ("XLF", "financials", "financials benefit from rate normalisation", "fundamental", "medium", 3),
-            ("VEA", "international", "international equities re-rate early in recovery", "fundamental", "long", 2),
-            ("IEMG", "emerging", "EM growth accelerates in recovery phase", "fundamental", "long", 3),
-            ("BND", "fixed_income", "bond allocation adds downside buffer", "diversification", "long", 1),
-            ("GLD", "metals", "inflation hedge remains relevant", "regime", "long", 2),
-        ]
-    else:
-        candidate_universe = [
-            ("XLF", "financials", "adds financial sector balance", "diversification", "long", 2),
-            ("XLV", "healthcare", "adds defensive healthcare exposure", "diversification", "long", 2),
-            ("XLI", "industrials", "adds cyclical diversification", "diversification", "long", 3),
-            ("VEA", "international", "adds developed international diversification", "diversification", "long", 2),
-            ("IEMG", "emerging", "adds emerging-market growth exposure", "diversification", "long", 3),
-            ("BND", "fixed_income", "adds bond ballast to reduce portfolio volatility", "diversification", "medium", 1),
-            ("GLD", "metals", "adds macro hedge for risk-off periods", "regime", "medium", 2),
+        regime_overlays = [
+            ("XLI", "industrials", "recovery regime supports cyclical re-acceleration", "regime", "medium", 3, "ETF"),
+            ("XLF", "financials", "recovery regime improves bank earnings leverage", "regime", "medium", 3, "ETF"),
+            ("VEA", "international", "recovery regime broadens opportunity set beyond US", "diversification", "long", 2, "ETF"),
         ]
 
-    for ticker, sector, why, signal_type, horizon, risk in candidate_universe:
-        current = sector_weights.get(sector, 0.0)
-        if current < 0.08:
-            regime_note = f" Regime is {regime}." if regime != "Neutral" else ""
-            momentum_note = f" Portfolio momentum is {momentum_trend}." if momentum_trend != "flat" else ""
-            suggestions.append({
-                "action": "buy",
-                "ticker": ticker,
-                "confidence": 0.62 if momentum_trend == "declining" else 0.68,
-                "size_hint": "Starter position 3-8%",
-                "rationale": (
-                    f"{ticker} {why}. Current {sector} exposure is only {current * 100:.1f}%."
-                    f"{regime_note}{momentum_note}"
-                ),
-                "signal_type": signal_type,
-                "time_horizon": horizon,
-                "risk_score": risk,
-                "catalyst": None,
-            })
+    candidate_universe = [*profile_universe.get(risk_profile, profile_universe["Balanced"]), *regime_overlays]
+    min_underweight = 0.12 if risk_profile == "Conservative" else (0.09 if risk_profile == "Balanced" else 0.08)
+    seen_buy: set[str] = set()
+
+    for ticker, sector, thesis, signal_type, horizon, risk, asset_kind in candidate_universe:
+        if ticker in seen_buy:
+            continue
+        seen_buy.add(ticker)
+
+        current_sector_weight = float(sector_weights.get(sector, 0.0))
+        current_ticker_weight = float(ticker_weights.get(ticker, 0.0))
+        # Avoid adding to names already close to concentration limits.
+        if current_ticker_weight >= concentration_trim * 0.8:
+            continue
+        # Focus buys where sector is underweight or ticker isn't yet owned.
+        if current_sector_weight >= min_underweight and current_ticker_weight > 0.02:
+            continue
+        if risk_profile == "Conservative" and sector in _GROWTH_SECTORS and is_defensive_regime:
+            continue
+
+        confidence = 0.64 if momentum_trend == "declining" else 0.70
+        if vol_trend == "elevated":
+            confidence -= 0.04
+        if is_recovery_regime and signal_type in {"regime", "momentum"}:
+            confidence += 0.03
+
+        suggestions.append({
+            "action": "buy",
+            "ticker": ticker,
+            "confidence": max(0.45, min(0.9, confidence)),
+            "size_hint": f"Add {buy_size_range} starter allocation",
+            "rationale": (
+                f"{ticker} ({asset_kind}) {thesis}. Current {sector} sleeve is {current_sector_weight * 100:.1f}% "
+                f"and {ticker} itself is {current_ticker_weight * 100:.1f}% of the portfolio. "
+                f"Aligned to {risk_profile} profile and {regime} regime with momentum={momentum_trend}, vol={vol_trend}."
+            ),
+            "signal_type": signal_type,
+            "time_horizon": horizon,
+            "risk_score": risk,
+            "catalyst": f"{regime} regime and underweight {sector} exposure",
+        })
 
     action_rank = {"sell": 0, "hold": 1, "buy": 2}
     suggestions.sort(key=lambda x: (action_rank.get(x["action"], 9), -float(x["confidence"])))
-    return suggestions[:14]
+    return _apply_portfolio_fit_to_suggestions(context, suggestions[:14])
 
 
 def _deterministic_insights(context: dict[str, Any]) -> dict[str, Any]:
@@ -1059,6 +1297,7 @@ def _deterministic_insights(context: dict[str, Any]) -> dict[str, Any]:
     change_lens = _portfolio_change_lens_text(context, portfolio_signals)
 
     regime_name = summary.get("regime", "Neutral")
+    risk_profile = str(context.get("risk_profile") or "Balanced")
     drawdown = summary.get("drawdown")
     vol8 = summary.get("rolling_8w_vol")
 
@@ -1091,8 +1330,8 @@ def _deterministic_insights(context: dict[str, Any]) -> dict[str, Any]:
         "used_ai": False,
         "model": "deterministic-v1",
         "summary": (
-            f"Portfolio is in {regime_name} regime with {len(holdings)} holdings. "
-            f"{change_lens} Suggestions prioritize risk concentration, recent momentum, and diversification gaps."
+            f"Portfolio is in {regime_name} regime with {len(holdings)} holdings and {risk_profile} risk profile. "
+            f"{change_lens} Suggestions prioritize risk concentration, recent momentum, and portfolio-unit fit."
         ),
         "key_risks": risk_lines[:5],
         "key_opportunities": opp_lines[:5],
@@ -1235,6 +1474,14 @@ def _safe_suggestions(value: Any) -> list[dict[str, Any]]:
         risk_score = int(risk_score_raw) if isinstance(risk_score_raw, (int, float)) and 1 <= risk_score_raw <= 5 else 3
         catalyst_raw = item.get("catalyst")
         catalyst = str(catalyst_raw)[:300] if catalyst_raw else None
+        portfolio_role_raw = item.get("portfolio_role")
+        portfolio_role = str(portfolio_role_raw).strip()[:120] if portfolio_role_raw else None
+        fit_score_raw = item.get("portfolio_fit_score")
+        fit_score = int(fit_score_raw) if isinstance(fit_score_raw, (int, float)) else None
+        if isinstance(fit_score, int):
+            fit_score = max(0, min(100, fit_score))
+        fit_rationale_raw = item.get("portfolio_fit_rationale")
+        fit_rationale = str(fit_rationale_raw).strip()[:360] if fit_rationale_raw else None
         out.append(
             {
                 "action": action,
@@ -1246,12 +1493,67 @@ def _safe_suggestions(value: Any) -> list[dict[str, Any]]:
                 "time_horizon": time_horizon,
                 "risk_score": risk_score,
                 "catalyst": catalyst,
+                "portfolio_role": portfolio_role,
+                "portfolio_fit_score": fit_score,
+                "portfolio_fit_rationale": fit_rationale,
             }
         )
     return out
 
 
+def _buy_research_brief(research: dict[str, Any] | None) -> str:
+    if not isinstance(research, dict):
+        return ""
+    quote = dict(research.get("quote") or {})
+    technical = dict(research.get("technical") or {})
+    fundamental = dict(research.get("fundamental") or {})
+    parts: list[str] = []
+
+    rsi14 = technical.get("rsi14")
+    if isinstance(rsi14, (int, float)):
+        parts.append(f"RSI14 {_format_num(float(rsi14), 1)}")
+    momentum_20d = technical.get("momentum_20d_pct")
+    if isinstance(momentum_20d, (int, float)):
+        parts.append(f"20d mom {_format_pct(float(momentum_20d), 2)}")
+    ma20_gap = technical.get("ma20_gap_pct")
+    if isinstance(ma20_gap, (int, float)):
+        parts.append(f"vs MA20 {_format_pct(float(ma20_gap), 2)}")
+    trailing_pe = fundamental.get("trailing_pe")
+    if isinstance(trailing_pe, (int, float)):
+        parts.append(f"P/E {_format_num(float(trailing_pe), 1)}")
+    beta = fundamental.get("beta")
+    if isinstance(beta, (int, float)):
+        parts.append(f"beta {_format_num(float(beta), 2)}")
+    day_change_pct = quote.get("day_change_pct")
+    if isinstance(day_change_pct, (int, float)):
+        parts.append(f"1d {_format_pct(float(day_change_pct), 2)}")
+
+    return "; ".join(parts[:5])
+
+
+def _enrich_buy_suggestion_with_research(
+    suggestion: dict[str, Any], research: dict[str, Any] | None
+) -> dict[str, Any]:
+    if not isinstance(suggestion, dict):
+        return suggestion
+    if str(suggestion.get("action") or "").lower() != "buy":
+        return suggestion
+    if not isinstance(research, dict):
+        return suggestion
+
+    enriched = dict(suggestion)
+    brief = _buy_research_brief(research)
+    if brief:
+        rationale = str(enriched.get("rationale") or "").strip()
+        if brief not in rationale:
+            enriched["rationale"] = f"{rationale} Evidence: {brief}.".strip()
+        if not enriched.get("catalyst"):
+            enriched["catalyst"] = brief
+    return enriched
+
+
 async def _validate_suggestions_and_watchlist(
+    context: dict[str, Any],
     suggestions: list[dict[str, Any]],
     watchlist: list[str],
 ) -> tuple[list[dict[str, Any]], list[str]]:
@@ -1266,17 +1568,22 @@ async def _validate_suggestions_and_watchlist(
         if len(unique) >= _RECOMMENDATION_TICKER_LIMIT:
             break
     if not unique:
-        return suggestions, watchlist
+        return _apply_portfolio_fit_to_suggestions(context, suggestions), watchlist
 
     try:
         validation = await yahoo_quotes.fetch_batch_research(unique)
     except Exception:
-        return suggestions, watchlist
+        return _apply_portfolio_fit_to_suggestions(context, suggestions), watchlist
 
     valid = {ticker for ticker, data in validation.items() if data}
-    clean_suggestions = [s for s in suggestions if str(s.get("ticker") or "").upper() in valid]
+    clean_suggestions: list[dict[str, Any]] = []
+    for s in suggestions:
+        ticker = str(s.get("ticker") or "").upper()
+        if ticker not in valid:
+            continue
+        clean_suggestions.append(_enrich_buy_suggestion_with_research(s, validation.get(ticker)))
     clean_watchlist = [t for t in watchlist if str(t).upper() in valid]
-    return clean_suggestions, clean_watchlist
+    return _apply_portfolio_fit_to_suggestions(context, clean_suggestions), clean_watchlist
 
 
 async def generate_portfolio_insights(context: dict[str, Any]) -> dict[str, Any]:
@@ -1300,6 +1607,8 @@ async def generate_portfolio_insights(context: dict[str, Any]) -> dict[str, Any]
                 "news events ranked by portfolio impact, and two computed signal objects: "
                 "'portfolio_signals' (alpha win rate, momentum trend, volatility trend, losing streak) "
                 "and 'holding_signals' (per-holding risk scores, news catalysts, signal types). "
+                "It also includes risk_profile and risk_policy derived from the rulebook thresholds. "
+                "All suggestions must align with that policy and concentration limits. "
                 "In the top summary, explicitly compare current 4 weeks vs prior 4 weeks "
                 "for alpha, rolling alpha, volatility, beta, and drawdown, and state directional change. "
                 "Use ALL of these to form grounded, data-driven suggestions. "
@@ -1313,9 +1622,13 @@ async def generate_portfolio_insights(context: dict[str, Any]) -> dict[str, Any]
                 "signal_type: 'momentum'|'fundamental'|'news'|'regime'|'concentration'|'diversification'|'stop_loss'|'profit_taking', "
                 "time_horizon: 'short'|'medium'|'long', "
                 "risk_score: integer 1-5 (1=low risk, 5=critical), "
-                "catalyst: string|null (the specific metric, news headline, or trigger for this signal)}. "
+                "catalyst: string|null (the specific metric, news headline, or trigger for this signal), "
+                "portfolio_role: string (how this action helps the whole portfolio), "
+                "portfolio_fit_score: integer 0-100, "
+                "portfolio_fit_rationale: string (interaction with existing holdings and sector mix)}. "
                 "For sell/trim: reference the holding's current weight and unrealized P&L from top_holdings. "
-                "For buy: explain why this ticker fits THIS portfolio's gaps given current regime and signals. "
+                "For buy: provide precise ETF/stock theses and explain why this ticker fits THIS portfolio's gaps "
+                "given risk_profile, current concentrations, and regime. "
                 "Do not be agreeable by default; form independent professional judgments. "
                 "When portfolio_signals show declining momentum or elevated volatility, reflect that in risk scores. "
                 "If history is short, acknowledge limits but still compare available windows. "
@@ -1335,6 +1648,7 @@ async def generate_portfolio_insights(context: dict[str, Any]) -> dict[str, Any]
     suggestions = _safe_suggestions(parsed.get("suggestions"))
     parsed_watchlist = [str(x).upper() for x in (parsed.get("watchlist") or baseline["watchlist"])][:12]
     clean_suggestions, clean_watchlist = await _validate_suggestions_and_watchlist(
+        context,
         suggestions or baseline["suggestions"],
         parsed_watchlist,
     )
@@ -1366,7 +1680,13 @@ def _fallback_chat_reply(context: dict[str, Any], message: str) -> tuple[str, li
         picks = [s for s in suggestions if s["action"] == "sell"][:4]
         if not picks:
             return ("No clear sell/trim candidates right now from the current rule set.", sources)
-        lines = [f"- {p['ticker']}: {p['rationale']}" for p in picks]
+        lines = [
+            (
+                f"- {p['ticker']}: {p['rationale']} "
+                f"(fit {int(p.get('portfolio_fit_score') or 0)}/100, role: {p.get('portfolio_role') or 'risk control'})"
+            )
+            for p in picks
+        ]
         if wants_evidence:
             evidence_lines = [f"- {s}" for s in sources[:5]]
             return (
@@ -1382,7 +1702,13 @@ def _fallback_chat_reply(context: dict[str, Any], message: str) -> tuple[str, li
         picks = [s for s in suggestions if s["action"] == "buy"][:5]
         if not picks:
             return ("No clear buy candidates were detected from current diversification gaps.", sources)
-        lines = [f"- {p['ticker']}: {p['rationale']}" for p in picks]
+        lines = [
+            (
+                f"- {p['ticker']}: {p['rationale']} "
+                f"(fit {int(p.get('portfolio_fit_score') or 0)}/100, role: {p.get('portfolio_role') or 'diversification'})"
+            )
+            for p in picks
+        ]
         if wants_evidence:
             evidence_lines = [f"- {s}" for s in sources[:5]]
             return (
@@ -1464,10 +1790,13 @@ async def chat_with_portfolio(
             "role": "system",
             "content": (
                 "You are LNZ AI portfolio assistant. Use the provided portfolio context deeply, including "
-                "weekly series trends, holdings details, risk thresholds, and ranked news impact. "
+                "weekly series trends, holdings details, risk thresholds, explicit risk_profile/risk_policy, "
+                "and ranked news impact. "
                 "Form an independent professional opinion; do not agree with the user by default. "
                 "If user assumptions conflict with the data, say so directly and explain why. "
                 "Ground claims in explicit numbers and provided source headlines/URLs. "
+                "When suggesting ETF/stock ideas, always explain portfolio-unit fit: how it complements "
+                "or offsets current holdings and concentrations. "
                 "Do not invent external research. Mention uncertainty when data is missing. "
                 + response_style
             ),

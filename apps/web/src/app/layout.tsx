@@ -4,9 +4,14 @@ import { Layout } from "@/components/Layout";
 import { CurrencyProvider } from "@/lib/currency";
 
 export const metadata: Metadata = {
-  title: "LNZ - Portfolio Analytics",
+  title: "Alphenzi - Portfolio Intelligence",
   description:
     "Deterministic portfolio analytics and decision support. Not financial advice.",
+  icons: {
+    icon: "/branding/alphenzi-logo-v3.svg",
+    shortcut: "/branding/alphenzi-logo-v3.svg",
+    apple: "/branding/alphenzi-logo-v3.svg",
+  },
 };
 
 export default function RootLayout({

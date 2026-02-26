@@ -1,95 +1,130 @@
-# LNZ – Portfolio Analytics & Decision Support
+# LNZ — Portfolio Analytics & AI Copilot
 
-> **Disclaimer:** LNZ is an analytics tool only. It produces rule-based, explainable outputs. Nothing in this application constitutes financial advice, a solicitation, or a recommendation to buy or sell any security.
+> **Not financial advice.** LNZ is an analytics and decision-support tool. Nothing it produces constitutes a solicitation or recommendation to buy or sell any security.
 
 ---
 
 ## What Is LNZ?
 
-LNZ ingests a weekly portfolio Excel file and live market data to produce:
+LNZ is a **self-hosted portfolio intelligence platform** for serious self-directed investors. It gives individual investors the kind of analytics previously reserved for institutional desks — without the Bloomberg price tag.
 
-- Portfolio metrics: alpha, rolling alpha, volatility, drawdown, beta
-- Regime classification: Defensive / Recovery / Expansion / Neutral
-- Deterministic, explainable rule-based recommendations (deployment tranches, profit-taking, risk control)
-- Portfolio-relevant news and macro snapshots
+**Core capabilities:**
 
-No brokerage credentials. No automated trading. All recommendations include the rule triggers that generated them.
-
----
-
-## Architecture
-
-```
-lnz/
-├── apps/
-│   ├── api/          FastAPI · Python · pandas · SQLAlchemy
-│   └── web/          Next.js 14 App Router · TypeScript · Tailwind · Recharts
-├── packages/
-│   └── shared/       Shared TypeScript types
-└── docker-compose.yml
-```
+| Feature | Description |
+|---------|-------------|
+| 📊 Weekly Alpha Tracking | Portfolio return vs SPY benchmark, every week |
+| 🏛 Regime Classification | Defensive / Recovery / Expansion / Neutral — rule-based, explainable |
+| 🤖 AI Portfolio Copilot | Portfolio-aware AI chat using your actual holdings as context |
+| 📰 News Impact Mapping | News events mapped to your specific holdings with sentiment scoring |
+| ⚡ AI Catalyst Monitor | Real-time news catalyst aggregation per ticker |
+| 📈 CNN Fear & Greed | Live market sentiment index on the dashboard |
+| 💱 CAD/USD Dual Currency | Full Canadian dollar support with live FX conversion |
+| 📋 Risk Rulebook | Personalized deployment / profit-taking / stop-loss thresholds |
+| 📥 Excel Import | Upload your weekly broker export — no brokerage API access required |
 
 ---
 
-## Quick Start
+## Quick Start (Docker)
 
-### Prerequisites
-
-- Docker ≥ 24 and Docker Compose v2
-- (Optional) Node 20+ and Python 3.12+ for local development without Docker
-
-### 1. Configure environment
+**Prerequisites:** Docker ≥ 24 and Docker Compose v2
 
 ```bash
+# 1. Clone the repo
+git clone https://github.com/yourusername/lnz.git && cd lnz
+
+# 2. Configure your environment
 cp .env.example .env
-# Edit .env — especially SECRET_KEY and FILE_ENCRYPTION_KEY for production
+# Edit .env — set SECRET_KEY, FILE_ENCRYPTION_KEY, and AI keys
+
+# 3. Start all services
+docker compose up --build -d
+
+# 4. Open the app
+open http://localhost:3000
 ```
 
-### 2. Start all services
-
-```bash
-make dev
-```
-
-This starts:
 | Service | URL |
 |---------|-----|
-| Next.js frontend | http://localhost:3000 |
-| FastAPI backend | http://localhost:8000 |
-| OpenAPI docs | http://localhost:8000/docs |
+| Dashboard | http://localhost:3000 |
+| API docs | http://localhost:8000/docs |
 | Postgres | localhost:5432 |
-
-### 3. Apply migrations
-
-```bash
-make migrate
-```
-
-### 4. Generate sample data
-
-```bash
-make seed
-# Creates apps/api/uploads/sample_portfolio.xlsx
-```
-
-Then open http://localhost:3000/import and upload the generated file.
 
 ---
 
-## Excel Template Format
+## Deploying to Production (HTTPS)
 
-Upload a `.xlsx` file with the following columns on the first sheet:
+```bash
+# 1. Copy and fill in the production environment file
+cp .env.prod.example .env
+# Set LNZ_DOMAIN, strong POSTGRES_PASSWORD, SECRET_KEY, FILE_ENCRYPTION_KEY, AI keys
 
-| Column | Type | Example | Notes |
-|--------|------|---------|-------|
-| `Date` | date | `2024-01-05` | mm/dd/yyyy or dd/mm/yyyy; configure in Import UI |
-| `Total Value` | currency | `$125,000.00` | Dollar signs and commas are stripped |
-| `Net Deposits` | currency | `$0.00` | Cumulative net capital invested |
-| `Period Deposits` | currency | `$0.00` | Cash added/removed this period |
-| `Period Return` | percent | `3.65%` | Portfolio return for the week |
-| `SPY Period Return` | percent | `2.10%` | Benchmark (SPY) return for the week |
+# 2. Point your domain's A record to this server
 
-Additional columns are ignored. The app recomputes all derived metrics to avoid spreadsheet formula errors.
+# 3. Launch with the production compose file
+docker compose -f docker-compose.prod.yml up --build -d
+```
+
+Caddy handles **automatic HTTPS via Let's Encrypt** on first start. No manual certificate setup needed.
+
+### Production vs Development
+
+| Feature | Dev (`docker-compose.yml`) | Prod (`docker-compose.prod.yml`) |
+|---------|---------------------------|----------------------------------|
+| API workers | 1, `--reload` | 2, no `--reload` |
+| HTTPS | No | Yes (Caddy + Let's Encrypt) |
+| API docs (`/docs`) | Visible | Hidden (`HIDE_DOCS=true`) |
+| Source volume mounts | Yes (hot-reload) | No (image-baked code) |
+| Postgres exposed | Yes (port 5432) | No (internal only) |
+
+---
+
+## Excel Import Format
+
+Upload a `.xlsx` file with these columns on the first sheet:
+
+| Column | Type | Example |
+|--------|------|---------|
+| `Date` | date | `01/05/2024` |
+| `Total Value` | currency | `$125,000.00` |
+| `Net Deposits` | currency | `$100,000.00` |
+| `Period Deposits` | currency | `$0.00` |
+| `Period Return` | percent | `3.65%` or `0.0365` |
+| `SPY Period Return` | percent | `1.20%` or `0.012` |
+
+`Net Deposits` and `Period Deposits` are optional — defaults to 0 if missing.
+
+---
+
+## AI Configuration
+
+LNZ uses a provider chain: **Gemini → OpenAI → deterministic fallback**.
+
+| `LNZ_AI_PROVIDER` value | Behaviour |
+|------------------------|-----------|
+| `auto` | Tries Gemini first, falls back to OpenAI, then deterministic |
+| `gemini` | Gemini only |
+| `openai` | OpenAI only |
+| `deterministic` | No LLM calls — rule-based outputs only (safe default, free) |
+
+Set in `.env`:
+```env
+LNZ_AI_PROVIDER=auto
+LNZ_GEMINI_API_KEY=your-gemini-key
+LNZ_OPENAI_API_KEY=your-openai-key
+```
+
+---
+
+## Security
+
+| Feature | Detail |
+|---------|--------|
+| **API Key Auth** | Set `LNZ_API_KEY` in `.env` to gate all endpoints behind a key |
+| **HTTPS** | Caddy provides automatic TLS via Let's Encrypt in production |
+| **Prompt injection protection** | User data is sanitised before embedding in LLM prompts |
+| **File encryption** | Uploaded Excel files are AES-256 encrypted on disk |
+| **Rate limiting** | AI endpoints are rate-limited per IP (default: 20 req/min) |
+| **CORS** | Restricted to `CORS_ORIGINS` — no direct external browser API calls |
 
 ---
 
@@ -103,53 +138,40 @@ Additional columns are ignored. The app recomputes all derived metrics to avoid 
 | Rolling 8-week Volatility | `sample stdev(Rp, last 8)` |
 | Running Peak | `max(Total Value, up to t)` |
 | Drawdown | `(Total Value / Peak) − 1` |
-| Max Drawdown | `min(Drawdown over all t)` |
-| Rolling 12-week Beta | `cov(Rp,Rb) / var(Rb)` over last 12 weeks |
-| Volatility Ratio | `stdev(Rp) / stdev(Rb)` over full sample |
+| Rolling 12-week Beta | `cov(Rp, Rb) / var(Rb)` over last 12 weeks |
 
 ---
 
 ## Regime Classification
 
-Regimes are evaluated in priority order (Defensive > Recovery > Expansion):
-
 | Regime | Conditions |
 |--------|-----------|
 | **Defensive** | Rolling 4w alpha < 0 AND drawdown ≤ −8% AND vol8 increasing |
 | **Recovery** | Alpha4 improving 3 consecutive weeks AND drawdown improving AND vol8 stable/declining |
-| **Expansion** | Alpha4 > 0 for 2 consecutive weeks AND drawdown ≥ −3% AND total value within 2% of peak |
+| **Expansion** | Alpha4 > 0 for 2 consecutive weeks AND drawdown ≥ −3% AND value within 2% of peak |
 | **Neutral** | None of the above match |
 
 ---
 
-## Adding a Market/News Provider Adapter
+## Architecture
 
-1. Create a new file in `apps/api/app/providers/market/` (or `news/`)
-2. Implement the `MarketDataProvider` (or `NewsProvider`) interface from `base.py`
-3. Register your provider class in `apps/api/app/services/market_data.py` (or `news.py`) by adding a branch to `get_provider()`
-4. Set `MARKET_DATA_PROVIDER=your_key` (or `NEWS_PROVIDER=your_key`) in `.env`
-
----
-
-## Security Notes
-
-- API keys are stored only in environment variables — never committed or persisted in the database
-- Uploaded Excel files are AES-256 encrypted on disk using `FILE_ENCRYPTION_KEY`
-- File uploads are validated: `.xlsx` only, max 10 MB
-- CORS is restricted to `CORS_ORIGINS`; no direct external API calls from the browser
-- All recommendation inputs, rule triggers, and outputs are logged in the `recommendations` table
+```
+lnz/
+├── apps/
+│   ├── api/          FastAPI · Python 3.12 · pandas · SQLAlchemy · PostgreSQL
+│   └── web/          Next.js App Router · TypeScript · Tailwind CSS · Recharts
+├── docker-compose.yml          Development
+├── docker-compose.prod.yml     Production (Caddy HTTPS)
+├── Caddyfile                   Reverse proxy + TLS config
+└── .env.prod.example           Production env template
+```
 
 ---
 
-## Make Targets
+## License
 
-| Target | Description |
-|--------|-------------|
-| `make dev` | Start Docker Compose stack |
-| `make test` | Run pytest |
-| `make lint` | Ruff + ESLint |
-| `make format` | Black + Ruff fix + Prettier |
-| `make migrate` | Alembic upgrade head |
-| `make makemigration name=label` | Generate new migration |
-| `make seed` | Generate sample Excel |
-| `make clean` | Destroy containers + volumes |
+MIT. Self-hosted use is free forever. Bring your own API keys.
+
+---
+
+> **Disclaimer:** LNZ is an analytics tool for informational purposes only. It is not a registered investment adviser. Past performance and AI signals are not indicators of future results. Always consult a qualified financial professional before making investment decisions.

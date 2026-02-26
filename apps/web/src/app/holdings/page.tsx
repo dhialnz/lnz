@@ -337,6 +337,17 @@ export default function HoldingsPage() {
         </button>
       </div>
 
+      {snapshot?.fx_warning && (
+        <div className="flex items-start gap-2 rounded-lg border border-caution/40 bg-caution/10 px-4 py-3">
+          <span className="text-caution text-sm mt-0.5">⚠</span>
+          <p className="text-xs text-caution leading-relaxed">
+            <span className="font-semibold">FX rate unavailable.</span> The CAD/USD exchange rate could not be fetched from Yahoo Finance.
+            Cost-basis figures for CAD-denominated holdings are displayed in raw CAD values until the rate recovers.
+            Live prices are unaffected.
+          </p>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <MetricTile
           label={`Total Value (${currencyLabel})`}

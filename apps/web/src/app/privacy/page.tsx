@@ -15,7 +15,7 @@ export default function PrivacyPage() {
       <section className="space-y-3">
         <h2 className="text-base font-semibold text-white">1. Data We Collect</h2>
         <p className="text-sm leading-6 text-gray-400">
-          LNZ stores the following information locally in its database:
+          Alphenzi stores the following information locally in its database:
         </p>
         <ul className="list-disc list-inside space-y-1 text-sm text-gray-400 pl-2">
           <li>Portfolio holdings you manually enter (ticker, shares, cost basis)</li>
@@ -58,7 +58,7 @@ export default function PrivacyPage() {
         <h2 className="text-base font-semibold text-white">4. Data Storage</h2>
         <p className="text-sm leading-6 text-gray-400">
           All portfolio data is stored in a locally-hosted PostgreSQL database. In self-hosted deployments,
-          you control where this database runs. No data is sent to LNZ servers.
+          you control where this database runs. No data is sent to Alphenzi servers.
         </p>
       </section>
 

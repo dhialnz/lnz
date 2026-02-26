@@ -17,7 +17,7 @@ export default function DisclaimerPage() {
           NOT FINANCIAL ADVICE
         </p>
         <p className="mt-2 text-sm leading-6 text-gray-300">
-          LNZ Portfolio Analytics is a <strong className="text-white">personal analytics tool</strong>.
+          Alphenzi is a <strong className="text-white">personal analytics tool</strong>.
           All outputs — including metrics, AI-generated recommendations, news impact scores, and
           risk indicators — are for <strong className="text-white">informational and educational purposes only</strong>.
           Nothing on this platform constitutes financial advice, investment advice, trading advice,
@@ -29,7 +29,7 @@ export default function DisclaimerPage() {
         <h2 className="text-base font-semibold text-white">1. Accuracy of Information</h2>
         <p className="text-sm leading-6 text-gray-400">
           Market prices, news data, and analytical outputs may be delayed, inaccurate, or incomplete.
-          LNZ makes no representations or warranties regarding the accuracy, completeness, or timeliness
+          Alphenzi makes no representations or warranties regarding the accuracy, completeness, or timeliness
           of any information displayed. Always verify data independently before making any financial decision.
         </p>
       </section>
@@ -48,7 +48,7 @@ export default function DisclaimerPage() {
       <section className="space-y-3">
         <h2 className="text-base font-semibold text-white">3. No Liability</h2>
         <p className="text-sm leading-6 text-gray-400">
-          The creators of LNZ shall not be liable for any losses, damages, or decisions made based on
+          The creators of Alphenzi shall not be liable for any losses, damages, or decisions made based on
           information or outputs from this platform. Use of this tool is entirely at your own risk.
         </p>
       </section>
@@ -57,7 +57,7 @@ export default function DisclaimerPage() {
         <h2 className="text-base font-semibold text-white">4. Data Sources</h2>
         <p className="text-sm leading-6 text-gray-400">
           Market data is sourced from Yahoo Finance and other free public APIs. News data is sourced
-          from publicly available RSS feeds and news aggregators. These sources are not affiliated with LNZ.
+          from publicly available RSS feeds and news aggregators. These sources are not affiliated with Alphenzi.
         </p>
       </section>
 

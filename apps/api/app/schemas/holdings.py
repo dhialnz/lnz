@@ -100,6 +100,10 @@ class HoldingsSnapshot(BaseModel):
     sharpe_30d: Optional[float]
     sortino_30d: Optional[float]
 
+    # True when CAD-cost holdings are present but the CAD/USD rate is unavailable.
+    # Cost-basis figures may be slightly inaccurate until FX data recovers.
+    fx_warning: bool = False
+
     as_of: str  # ISO UTC timestamp of the price fetch
 
 

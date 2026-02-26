@@ -144,21 +144,20 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <div className="rounded-xl border border-border/80 bg-gradient-to-br from-[#11151e] via-[#111117] to-[#0f1116] p-3 shadow-[0_8px_22px_rgba(0,0,0,0.35)]">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <div className="relative flex h-8 w-8 items-center justify-center rounded-lg border border-accent/40 bg-accent/10">
-                    <span className="text-[11px] font-semibold tracking-[0.15em] text-accent">L</span>
-                    <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-accent/80 shadow-[0_0_12px_rgba(255,92,0,0.65)]" />
-                  </div>
-                  <div className="space-y-0.5">
-                    <p className="font-serif text-[19px] leading-none tracking-[0.26em] text-white">LNZ</p>
-                    <p className="text-[9px] font-mono uppercase tracking-[0.24em] text-accent/80">Alpha Desk</p>
-                  </div>
+                  <img
+                    src="/branding/alphenzi-logo-v3.svg"
+                    alt="Alphenzi"
+                    width={136}
+                    height={32}
+                    className="h-8 w-auto"
+                  />
                 </div>
                 <span className="inline-flex items-center gap-1 rounded-full bg-positive/10 px-2 py-1 text-[10px] font-medium text-positive">
                   <span className="h-1.5 w-1.5 rounded-full bg-positive hf-pulse-dot" />
                   LIVE
                 </span>
               </div>
-              <p className="mt-2 text-[11px] text-muted">Portfolio Intelligence Terminal</p>
+              <p className="mt-2 text-[11px] text-muted">Alphenzi Intelligence Terminal</p>
             </div>
 
             <nav className="space-y-1">
@@ -213,10 +212,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   ? "Pipeline requested... generating dashboard, news, and assistant summaries."
                   : aiPrewarm.started
                     ? aiPrewarm.completed
-                      ? "Pipeline completed. Use restart to regenerate all summaries."
+                      ? aiReadyCount === 3
+                        ? "Pipeline completed. Use restart to regenerate all summaries."
+                        : "Pipeline ended partial. Press restart to retry failed summaries."
                       : "Pipeline running..."
                     : "Press start to run AI summaries in the background."}
               </p>
+              {aiPrewarm.last_error && (
+                <p className="text-[10px] font-mono text-caution line-clamp-2">{aiPrewarm.last_error}</p>
+              )}
               <button
                 onClick={() => void handleStartPipeline()}
                 disabled={aiPipelineBusy}

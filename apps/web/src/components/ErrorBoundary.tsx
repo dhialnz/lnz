@@ -27,7 +27,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
     // Log to console so it surfaces in browser dev tools / server logs.
-    console.error("[LNZ ErrorBoundary]", error.message, info.componentStack);
+    console.error("[Alphenzi ErrorBoundary]", error.message, info.componentStack);
   }
 
   render(): ReactNode {

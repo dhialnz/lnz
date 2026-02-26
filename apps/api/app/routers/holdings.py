@@ -401,6 +401,7 @@ async def get_holdings(db: Session = Depends(get_db)) -> HoldingsSnapshot:
         total_year_change_pct=total_year_change_pct,
         sharpe_30d=sharpe,
         sortino_30d=sortino,
+        fx_warning=bool(cad_holdings) and usd_per_cad is None,
         as_of=dt.datetime.utcnow().isoformat() + "Z",
     )
 

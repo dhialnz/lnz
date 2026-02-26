@@ -1,0 +1,47 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# LNZ Portfolio Analytics — Caddyfile
+#
+# Caddy handles automatic HTTPS via Let's Encrypt.
+# Set LNZ_DOMAIN in your .env file (e.g. lnz.yourdomain.com).
+#
+# Optional: uncomment the basicauth block to add HTTP Basic Auth as an extra
+# access layer. Generate the password hash with:
+#   docker run caddy:2-alpine caddy hash-password --plaintext yourpassword
+# ─────────────────────────────────────────────────────────────────────────────
+
+{$LNZ_DOMAIN:localhost} {
+
+  # Reverse proxy all traffic to the Next.js app.
+  # Next.js internally rewrites /api/v1/* → http://api:8000/api/v1/*
+  reverse_proxy web:3000
+
+  # Gzip compression
+  encode gzip
+
+  # Security headers (Next.js also sets these; belt-and-suspenders)
+  header {
+    X-Frame-Options DENY
+    X-Content-Type-Options nosniff
+    Referrer-Policy strict-origin-when-cross-origin
+    X-XSS-Protection "1; mode=block"
+    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    -Server
+  }
+
+  # Optional HTTP Basic Auth — uncomment and configure to restrict access
+  # to the entire app beyond the API-key layer.
+  #
+  # basicauth {
+  #   # Generate hash: docker run caddy:2-alpine caddy hash-password --plaintext yourpassword
+  #   admin $2a$14$REPLACE_WITH_YOUR_BCRYPT_HASH
+  # }
+
+  # Logging
+  log {
+    output file /var/log/caddy/access.log {
+      roll_size 10mb
+      roll_keep 5
+    }
+    format json
+  }
+}

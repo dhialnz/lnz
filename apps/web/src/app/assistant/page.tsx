@@ -240,6 +240,26 @@ function SuggestionCard({ s }: { s: AISuggestion }) {
       </div>
       {/* Rationale */}
       <p className="text-xs text-gray-300 leading-5">{s.rationale}</p>
+      {/* Portfolio-unit fit */}
+      {(s.portfolio_fit_score != null || s.portfolio_role || s.portfolio_fit_rationale) && (
+        <div className="rounded border border-border/70 bg-[#0f1218] p-2 space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-muted">Portfolio Fit</span>
+            {s.portfolio_fit_score != null && (
+              <span className="text-[10px] font-mono text-accent">{Math.max(0, Math.min(100, Math.round(s.portfolio_fit_score)))} / 100</span>
+            )}
+          </div>
+          {s.portfolio_role && (
+            <p className="text-[11px] text-gray-300">
+              <span className="text-muted font-mono mr-1">role:</span>
+              {s.portfolio_role}
+            </p>
+          )}
+          {s.portfolio_fit_rationale && (
+            <p className="text-[11px] text-muted leading-4">{s.portfolio_fit_rationale}</p>
+          )}
+        </div>
+      )}
       {/* Catalyst */}
       {s.catalyst && (
         <div className="flex items-start gap-1.5">

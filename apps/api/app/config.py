@@ -48,6 +48,20 @@ class Settings(BaseSettings):
     OPENAI_MODEL_NEWS: str = ""
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
 
+    # ── Auth ─────────────────────────────────────────────────────────────────
+    # Optional single-user API key. When set, all non-health endpoints require
+    # the header  X-API-Key: <LNZ_API_KEY>  or  Authorization: Bearer <LNZ_API_KEY>.
+    # Leave empty (default) to disable — safe for local / development use.
+    LNZ_API_KEY: str = ""
+
+    # ── API explorer ─────────────────────────────────────────────────────────
+    # Set to true in production to hide /docs and /redoc endpoints.
+    HIDE_DOCS: bool = False
+
+    # ── Rate limiting ─────────────────────────────────────────────────────────
+    # Max AI endpoint calls per minute per IP. 0 = disabled.
+    AI_RATE_LIMIT_PER_MINUTE: int = 20
+
     @property
     def cors_origins_list(self) -> List[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",")]

@@ -28,6 +28,9 @@ class AISuggestionOut(BaseModel):
     time_horizon: Optional[Literal["short", "medium", "long"]] = None
     risk_score: Optional[int] = Field(default=None, ge=1, le=5)
     catalyst: Optional[str] = None
+    portfolio_role: Optional[str] = None
+    portfolio_fit_score: Optional[int] = Field(default=None, ge=0, le=100)
+    portfolio_fit_rationale: Optional[str] = None
 
 
 class PortfolioInsightsOut(BaseModel):

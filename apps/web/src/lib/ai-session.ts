@@ -202,6 +202,42 @@ export function clearAIPipelineState(): void {
 
 let prewarmPromise: Promise<void> | null = null;
 
+type RetryResult<T> = { ok: true; value: T } | { ok: false; error: string };
+
+function toErrorMessage(reason: unknown): string {
+  if (reason instanceof Error) return reason.message;
+  if (typeof reason === "string") return reason;
+  try {
+    return JSON.stringify(reason);
+  } catch {
+    return "unknown error";
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function withRetries<T>(
+  fn: () => Promise<T>,
+  attempts = 3,
+  baseDelayMs = 900,
+): Promise<RetryResult<T>> {
+  let lastError = "unknown error";
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const value = await fn();
+      return { ok: true, value };
+    } catch (reason: unknown) {
+      lastError = toErrorMessage(reason);
+      if (attempt < attempts) {
+        await sleep(baseDelayMs * attempt);
+      }
+    }
+  }
+  return { ok: false, error: lastError };
+}
+
 export async function startGlobalAIPrewarm(force = false): Promise<void> {
   if (!hasWindow()) return;
   const epoch = getAIEpoch();
@@ -210,6 +246,9 @@ export async function startGlobalAIPrewarm(force = false): Promise<void> {
   if (!force && prewarmPromise) return prewarmPromise;
 
   prewarmPromise = (async () => {
+    // Force each run to prove all summaries again; done flag is only set on 3/3.
+    window.sessionStorage.removeItem(doneKey);
+
     const startedAt = new Date().toISOString();
     writePrewarmState({
       epoch,
@@ -224,11 +263,17 @@ export async function startGlobalAIPrewarm(force = false): Promise<void> {
       last_error: null,
     });
 
+    const patchState = (patch: Partial<AIPrewarmState>) => {
+      writePrewarmState({
+        ...readAIPrewarmState(),
+        ...patch,
+      });
+    };
+
     const status = await getAIStatus().catch(() => null);
     if (!status?.ai_enabled) {
       setPuterAuthHint(false);
-      writePrewarmState({
-        ...readAIPrewarmState(),
+      patchState({
         ai_enabled: false,
         completed: false,
         last_error: "AI API disabled",
@@ -236,64 +281,104 @@ export async function startGlobalAIPrewarm(force = false): Promise<void> {
       return;
     }
     setPuterAuthHint(true);
-    writePrewarmState({
-      ...readAIPrewarmState(),
+    patchState({
       ai_enabled: true,
       last_error: null,
     });
 
-    const [dashboardFirst, news, assistant] = await Promise.allSettled([
-      getAIDashboardRecommendations(),
-      getAINewsSummary(),
-      getPortfolioInsights(),
-    ]);
+    let dashboardReady = false;
+    let newsReady = false;
+    let assistantReady = false;
 
-    let dashboard: PromiseSettledResult<Awaited<ReturnType<typeof getAIDashboardRecommendations>>> = dashboardFirst;
-    if (dashboard.status === "rejected") {
-      // One immediate retry smooths over transient gateway/model blips.
-      dashboard = await getAIDashboardRecommendations()
-        .then((value) => ({ status: "fulfilled", value }) as const)
-        .catch((reason) => ({ status: "rejected", reason }) as const);
-    }
+    let dashboardError = "";
+    let newsError = "";
+    let assistantError = "";
 
-    if (dashboard.status === "fulfilled") {
-      writeLatestDashboardRecommendations(dashboard.value.recommendations, dashboard.value.model);
-    }
-    if (news.status === "fulfilled") {
-      writeLatestNewsSummary(news.value.summary, news.value.model);
-    }
-    if (assistant.status === "fulfilled") {
-      writeLatestAssistantInsights(assistant.value, assistant.value.model);
-    }
-
-    const dashboardCached = readLatestDashboardRecommendations();
-    let dashboardReady =
-      dashboard.status === "fulfilled" ||
-      Boolean(dashboardCached && Array.isArray(dashboardCached.recommendations) && dashboardCached.recommendations.length > 0);
-
-    if (!dashboardReady) {
-      const rulesFallback = await getRecommendations().catch(() => []);
-      if (Array.isArray(rulesFallback) && rulesFallback.length > 0) {
-        writeLatestDashboardRecommendations(rulesFallback, "rules-fallback");
-        dashboardReady = true;
+    const maxRounds = 3;
+    for (let round = 1; round <= maxRounds; round += 1) {
+      if (!dashboardReady) {
+        const dashboard = await withRetries(() => getAIDashboardRecommendations(), 2, 800);
+        if (dashboard.ok) {
+          writeLatestDashboardRecommendations(dashboard.value.recommendations, dashboard.value.model);
+          dashboardReady = true;
+          dashboardError = "";
+        } else {
+          dashboardError = dashboard.error;
+          const dashboardCached = readLatestDashboardRecommendations();
+          dashboardReady = Boolean(
+            dashboardCached &&
+              Array.isArray(dashboardCached.recommendations) &&
+              dashboardCached.recommendations.length > 0,
+          );
+          if (!dashboardReady) {
+            const rulesFallback = await withRetries(() => getRecommendations(), 2, 600);
+            if (rulesFallback.ok && Array.isArray(rulesFallback.value) && rulesFallback.value.length > 0) {
+              writeLatestDashboardRecommendations(rulesFallback.value, "rules-fallback");
+              dashboardReady = true;
+            } else if (!rulesFallback.ok) {
+              dashboardError = `${dashboardError}; fallback: ${rulesFallback.error}`;
+            }
+          }
+        }
       }
-    }
-    const newsReady = news.status === "fulfilled";
-    const assistantReady = assistant.status === "fulfilled";
-    const errors: string[] = [];
-    if (!dashboardReady) errors.push("dashboard");
-    if (news.status === "rejected") errors.push("news");
-    if (assistant.status === "rejected") errors.push("assistant");
 
-    writePrewarmState({
-      ...readAIPrewarmState(),
+      if (!newsReady) {
+        const news = await withRetries(() => getAINewsSummary(), 2, 800);
+        if (news.ok) {
+          writeLatestNewsSummary(news.value.summary, news.value.model);
+          newsReady = true;
+          newsError = "";
+        } else {
+          newsError = news.error;
+          const newsCached = readLatestNewsSummary();
+          newsReady = Boolean(newsCached && typeof newsCached.text === "string" && newsCached.text.trim().length > 0);
+        }
+      }
+
+      if (!assistantReady) {
+        const assistant = await withRetries(() => getPortfolioInsights(), 2, 800);
+        if (assistant.ok) {
+          writeLatestAssistantInsights(assistant.value, assistant.value.model);
+          assistantReady = true;
+          assistantError = "";
+        } else {
+          assistantError = assistant.error;
+          const assistantCached = readLatestAssistantInsights();
+          assistantReady = Boolean(
+            assistantCached &&
+              typeof assistantCached.summary === "string" &&
+              assistantCached.summary.trim().length > 0,
+          );
+        }
+      }
+
+      patchState({
+        dashboard_ready: dashboardReady,
+        news_ready: newsReady,
+        assistant_ready: assistantReady,
+        last_error:
+          dashboardReady && newsReady && assistantReady
+            ? null
+            : `Retrying AI pipeline (${round}/${maxRounds})`,
+      });
+
+      if (dashboardReady && newsReady && assistantReady) break;
+      if (round < maxRounds) await sleep(600 * round);
+    }
+
+    const errors: string[] = [];
+    if (!dashboardReady) errors.push(`dashboard (${dashboardError || "failed"})`);
+    if (!newsReady) errors.push(`news (${newsError || "failed"})`);
+    if (!assistantReady) errors.push(`assistant (${assistantError || "failed"})`);
+
+    patchState({
       ai_enabled: true,
       completed: true,
       dashboard_ready: dashboardReady,
       news_ready: newsReady,
       assistant_ready: assistantReady,
       completed_at: new Date().toISOString(),
-      last_error: errors.length > 0 ? `Failed: ${errors.join(", ")}` : null,
+      last_error: errors.length > 0 ? `Failed: ${errors.join(" | ")}` : null,
     });
 
     if (dashboardReady && newsReady && assistantReady) {

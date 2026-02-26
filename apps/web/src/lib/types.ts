@@ -217,6 +217,8 @@ export interface HoldingsSnapshot {
   total_year_change_pct: number | null;
   sharpe_30d: number | null;
   sortino_30d: number | null;
+  /** True when CAD-cost holdings are present but the CAD/USD FX rate is unavailable. */
+  fx_warning?: boolean;
   as_of: string;
 }
 
@@ -302,6 +304,12 @@ export interface AISuggestion {
   risk_score?: number;
   /** Specific metric, news headline, or event that triggered the signal */
   catalyst?: string | null;
+  /** Portfolio-level role of this action (e.g., concentration control, defensive ballast). */
+  portfolio_role?: string | null;
+  /** Portfolio fit score (0-100) considering current holdings + risk profile. */
+  portfolio_fit_score?: number;
+  /** Why this action improves the portfolio as a full unit, not in isolation. */
+  portfolio_fit_rationale?: string | null;
 }
 
 export interface PortfolioInsights {

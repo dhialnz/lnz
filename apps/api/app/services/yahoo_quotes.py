@@ -9,6 +9,7 @@ import asyncio
 import datetime as dt
 import logging
 import math
+import time
 from typing import Any
 
 import httpx
@@ -21,6 +22,27 @@ _HEADERS = {
 }
 _TIMEOUT = 12.0
 _CAD_USD_TICKER = "CAD=X"
+
+# ─── In-memory TTL cache ─────────────────────────────────────────────────────
+
+_QUOTE_TTL_S = 300.0  # 5 minutes — balances freshness vs Yahoo rate-limiting
+_ticker_cache: dict[tuple[str, str], tuple[dict | None, float]] = {}
+_fx_cache: tuple[float | None, float] | None = None
+
+
+def _cache_get_ticker(ticker: str, history_range: str) -> dict | None | bool:
+    """Return cached result or ``False`` if cache miss/expired."""
+    entry = _ticker_cache.get((ticker, history_range))
+    if entry is None:
+        return False
+    result, ts = entry
+    if time.monotonic() - ts > _QUOTE_TTL_S:
+        return False
+    return result  # may be None (cached miss)
+
+
+def _cache_set_ticker(ticker: str, history_range: str, result: dict | None) -> None:
+    _ticker_cache[(ticker, history_range)] = (result, time.monotonic())
 
 
 async def _fetch_ticker_data_once(
@@ -229,12 +251,17 @@ async def fetch_ticker_data(
 ) -> dict[str, Any] | None:
     """
     Fetch 30 days of daily closes + current quote for a single ticker.
+    Results are cached for 5 minutes to reduce Yahoo Finance API pressure.
 
     Returns a dict with keys:
         current_price, prev_close, day_change, day_change_pct,
         name, history: [{date: str, close: float}]
     Returns None on any error (invalid ticker, network failure, etc.).
     """
+    cached = _cache_get_ticker(ticker, history_range)
+    if cached is not False:
+        return cached  # type: ignore[return-value]
+
     async with httpx.AsyncClient(headers=_HEADERS, timeout=_TIMEOUT) as client:
         for candidate in _ticker_candidates(ticker):
             data = await _fetch_ticker_data_once(
@@ -243,7 +270,11 @@ async def fetch_ticker_data(
                 history_range=history_range,
             )
             if data is not None:
+                _cache_set_ticker(ticker, history_range, data)
                 return data
+
+    # Cache the miss too so we don't hammer Yahoo on repeated invalid tickers.
+    _cache_set_ticker(ticker, history_range, None)
     return None
 
 
@@ -302,21 +333,31 @@ async def fetch_batch_research(tickers: list[str]) -> dict[str, dict[str, Any] |
 async def fetch_usd_per_cad() -> float | None:
     """
     Return USD per 1 CAD from Yahoo's CAD=X ticker.
+    Cached alongside other ticker data (5-minute TTL).
     """
+    global _fx_cache
+    if _fx_cache is not None:
+        rate, ts = _fx_cache
+        if time.monotonic() - ts <= _QUOTE_TTL_S:
+            return rate
+
     data = await fetch_ticker_data(_CAD_USD_TICKER, history_range="5d")
     if not data:
+        _fx_cache = (None, time.monotonic())
         return None
     px = data.get("current_price")
     try:
         value = float(px)
     except (TypeError, ValueError):
+        _fx_cache = (None, time.monotonic())
         return None
     if not math.isfinite(value) or value <= 0:
+        _fx_cache = (None, time.monotonic())
         return None
     # Yahoo CAD=X typically returns CAD per USD (~1.3+). Convert to USD per CAD.
-    if value > 1:
-        return 1.0 / value
-    return value
+    rate = 1.0 / value if value > 1 else value
+    _fx_cache = (rate, time.monotonic())
+    return rate
 
 
 async def search_tickers(query: str, limit: int = 8) -> list[dict[str, str | None]]:
