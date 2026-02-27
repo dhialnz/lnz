@@ -32,7 +32,7 @@ const BASE_URL = "/api/v1";
 // Default request timeout — AI endpoints can take 30+ s, regular data calls
 // should complete much faster.
 const DEFAULT_TIMEOUT_MS = 45_000;
-const AI_TIMEOUT_MS = 90_000;
+const AI_TIMEOUT_MS = 60_000;
 
 const AI_PATHS = ["/ai/chat", "/ai/portfolio-insights", "/ai/dashboard-recommendations", "/ai/news-summary"];
 

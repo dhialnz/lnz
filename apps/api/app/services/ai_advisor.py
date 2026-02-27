@@ -26,9 +26,9 @@ from app.services.news_impact import (
 )
 
 _SERIES_TAIL_LIMIT = 24
-_IMPORTANT_NEWS_LIMIT = 20
-_LLM_HOLDINGS_LIMIT = 16
-_LLM_NEWS_LIMIT = 16
+_IMPORTANT_NEWS_LIMIT = 12
+_LLM_HOLDINGS_LIMIT = 12
+_LLM_NEWS_LIMIT = 10
 _RECOMMENDATION_TICKER_LIMIT = 32
 _TICKER_PATTERN = re.compile(r"\b[A-Z]{2,5}(?:\.[A-Z]{1,2})?\b")
 _TICKER_STOPWORDS = {
@@ -162,6 +162,24 @@ def _resolve_provider_model(task: str | None = None) -> tuple[str, str]:
     if provider == "openai":
         return provider, _openai_model_for_task(task)
     return provider, model
+
+
+def _llm_timeout_for_task(task: str | None) -> float:
+    task_key = (task or "").strip().lower()
+    if task_key in {"insights", "dashboard"}:
+        return 45.0
+    if task_key == "chat":
+        return 40.0
+    return 35.0
+
+
+def _llm_max_tokens_for_task(task: str | None) -> int:
+    task_key = (task or "").strip().lower()
+    if task_key == "news":
+        return 700
+    if task_key in {"insights", "dashboard"}:
+        return 1200
+    return 1000
 
 
 def _risk_profile_from_thresholds(thresholds: dict[str, Any]) -> str:
@@ -1433,6 +1451,7 @@ async def _llm_chat(
         "model": model,
         "messages": messages,
         "temperature": 0.2,
+        "max_tokens": _llm_max_tokens_for_task(task),
     }
     # Keep strict JSON mode for OpenAI; Gemini compatibility may return
     # markdown-wrapped JSON, which we parse safely below.
@@ -1440,7 +1459,7 @@ async def _llm_chat(
         payload["response_format"] = {"type": "json_object"}
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=_llm_timeout_for_task(task)) as client:
             res = await client.post(url, headers=headers, json=payload)
             res.raise_for_status()
             data = res.json()
@@ -1602,86 +1621,63 @@ async def _validate_suggestions_and_watchlist(
 
 async def generate_portfolio_insights(context: dict[str, Any]) -> dict[str, Any]:
     baseline = _deterministic_insights(context)
-    portfolio_signals = _compute_portfolio_signals(context)
-    change_lens = _portfolio_change_lens_text(context, portfolio_signals)
-    provider, _ = resolve_ai_provider()
-    if provider == "deterministic":
+    try:
+        portfolio_signals = _compute_portfolio_signals(context)
+        change_lens = _portfolio_change_lens_text(context, portfolio_signals)
+        provider, _ = resolve_ai_provider()
+        if provider == "deterministic":
+            return baseline
+
+        compact_context = _sanitize_for_llm(_llm_compact_context(context))
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are LNZ AI portfolio copilot. Return strict JSON with keys "
+                    "summary, key_risks, key_opportunities, suggestions, watchlist. "
+                    "Use risk_profile, risk_policy, holdings, weekly performance, and news impact. "
+                    "For each suggestion include action, ticker, confidence, rationale, size_hint, "
+                    "signal_type, time_horizon, risk_score, catalyst, portfolio_role, "
+                    "portfolio_fit_score, portfolio_fit_rationale. "
+                    "In summary, compare current 4 weeks vs prior 4 weeks for alpha, rolling alpha, "
+                    "volatility, beta, and drawdown. Return raw JSON only."
+                ),
+            },
+            {"role": "user", "content": json.dumps(compact_context)},
+        ]
+        raw, _, used_model = await _llm_chat(messages, json_mode=True, task="insights")
+        if not raw:
+            return baseline
+
+        parsed = _extract_json_object(raw)
+        if not parsed:
+            return baseline
+
+        suggestions = _safe_suggestions(parsed.get("suggestions"))
+        parsed_watchlist = [str(x).upper() for x in (parsed.get("watchlist") or baseline["watchlist"])][:12]
+        clean_suggestions, clean_watchlist = await _validate_suggestions_and_watchlist(
+            context,
+            suggestions or baseline["suggestions"],
+            parsed_watchlist,
+        )
+        parsed_summary = str(parsed.get("summary") or baseline["summary"]).strip()
+        if change_lens and change_lens not in parsed_summary:
+            parsed_summary = f"{parsed_summary} {change_lens}".strip()
+
+        return {
+            "generated_at": _utc_now(),
+            "used_ai": True,
+            "model": used_model,
+            "summary": parsed_summary,
+            "key_risks": [str(x) for x in (parsed.get("key_risks") or baseline["key_risks"])][:6],
+            "key_opportunities": [str(x) for x in (parsed.get("key_opportunities") or baseline["key_opportunities"])][:6],
+            "suggestions": clean_suggestions or baseline["suggestions"],
+            "watchlist": clean_watchlist or baseline["watchlist"],
+            "sources": baseline["sources"],
+        }
+    except Exception as exc:
+        logger.exception("generate_portfolio_insights failed; falling back to deterministic: %s", exc)
         return baseline
-
-    # Sanitize user-controlled fields before embedding in LLM prompt.
-    compact_context = _sanitize_for_llm(_llm_compact_context(context))
-
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are LNZ AI portfolio copilot. "
-                "The user's portfolio context includes: a summary with regime and drawdown, "
-                "a series_tail of weekly performance, holdings with weights and unrealized P&L, "
-                "news events ranked by portfolio impact, and two computed signal objects: "
-                "'portfolio_signals' (alpha win rate, momentum trend, volatility trend, losing streak) "
-                "and 'holding_signals' (per-holding risk scores, news catalysts, signal types). "
-                "It also includes risk_profile and risk_policy derived from the rulebook thresholds. "
-                "All suggestions must align with that policy and concentration limits. "
-                "In the top summary, explicitly compare current 4 weeks vs prior 4 weeks "
-                "for alpha, rolling alpha, volatility, beta, and drawdown, and state directional change. "
-                "Use ALL of these to form grounded, data-driven suggestions. "
-                "Return strict JSON with keys: "
-                "summary (string), key_risks (string[]), key_opportunities (string[]), "
-                "suggestions (array of objects — see schema below), watchlist (string[]). "
-                "Each suggestion object must have: "
-                "{action: 'buy'|'hold'|'sell', ticker: string, confidence: float 0-1, "
-                "rationale: string (cite specific metrics, weights, or news from the context), "
-                "size_hint: string|null (e.g. 'Trim 15%', 'Add 3-5%', 'Hold full position'), "
-                "signal_type: 'momentum'|'fundamental'|'news'|'regime'|'concentration'|'diversification'|'stop_loss'|'profit_taking', "
-                "time_horizon: 'short'|'medium'|'long', "
-                "risk_score: integer 1-5 (1=low risk, 5=critical), "
-                "catalyst: string|null (the specific metric, news headline, or trigger for this signal), "
-                "portfolio_role: string (how this action helps the whole portfolio), "
-                "portfolio_fit_score: integer 0-100, "
-                "portfolio_fit_rationale: string (interaction with existing holdings and sector mix)}. "
-                "For sell/trim: reference the holding's current weight and unrealized P&L from top_holdings. "
-                "For buy: provide precise ETF/stock theses and explain why this ticker fits THIS portfolio's gaps "
-                "given risk_profile, current concentrations, and regime. "
-                "Do not be agreeable by default; form independent professional judgments. "
-                "When portfolio_signals show declining momentum or elevated volatility, reflect that in risk scores. "
-                "If history is short, acknowledge limits but still compare available windows. "
-                "Return raw JSON only with no markdown."
-            ),
-        },
-        {"role": "user", "content": json.dumps(compact_context)},
-    ]
-    raw, _, used_model = await _llm_chat(messages, json_mode=True, task="insights")
-    if not raw:
-        return baseline
-
-    parsed = _extract_json_object(raw)
-    if not parsed:
-        return baseline
-
-    suggestions = _safe_suggestions(parsed.get("suggestions"))
-    parsed_watchlist = [str(x).upper() for x in (parsed.get("watchlist") or baseline["watchlist"])][:12]
-    clean_suggestions, clean_watchlist = await _validate_suggestions_and_watchlist(
-        context,
-        suggestions or baseline["suggestions"],
-        parsed_watchlist,
-    )
-    parsed_summary = str(parsed.get("summary") or baseline["summary"]).strip()
-    if change_lens and change_lens not in parsed_summary:
-        parsed_summary = f"{parsed_summary} {change_lens}".strip()
-
-    return {
-        "generated_at": _utc_now(),
-        "used_ai": True,
-        "model": used_model,
-        "summary": parsed_summary,
-        "key_risks": [str(x) for x in (parsed.get("key_risks") or baseline["key_risks"])][:6],
-        "key_opportunities": [str(x) for x in (parsed.get("key_opportunities") or baseline["key_opportunities"])][:6],
-        "suggestions": clean_suggestions or baseline["suggestions"],
-        "watchlist": clean_watchlist or baseline["watchlist"],
-        "sources": baseline["sources"],
-    }
-
 
 def _fallback_chat_reply(context: dict[str, Any], message: str) -> tuple[str, list[str]]:
     msg = message.lower()
@@ -1914,87 +1910,95 @@ async def generate_dashboard_recommendations(context: dict[str, Any]) -> dict[st
     baseline_recs = await _validate_and_enrich_recommendations_with_yahoo(baseline_raw)
     if not baseline_recs:
         baseline_recs = baseline_raw
-    provider, _ = resolve_ai_provider()
-    if provider == "deterministic":
-        return {
-            "generated_at": _utc_now(),
-            "used_ai": False,
-            "model": "deterministic-v1",
-            "recommendations": baseline_recs,
-        }
 
-    compact_context = {
-        "summary": context.get("summary"),
-        "risk_profile": context.get("risk_profile"),
-        "thresholds": context.get("thresholds"),
-        "holdings": sorted(
-            [
-                {
-                    "ticker": h.get("ticker"),
-                    "weight": h.get("weight"),
-                    "unrealized_pnl_pct": h.get("unrealized_pnl_pct"),
-                    "day_change_pct": h.get("day_change_pct"),
-                }
-                for h in (context.get("holdings") or [])
-            ],
-            key=lambda x: float(x.get("weight") or 0.0),
-            reverse=True,
-        )[:16],
-        "top_news": [
-            {
-                "headline": n.get("headline"),
-                "source": n.get("source"),
-                "event_type": n.get("event_type"),
-                "portfolio_impact_score": n.get("portfolio_impact_score"),
-                "impacted": [h.get("ticker") for h in (n.get("impacted_holdings") or [])[:5]],
+    try:
+        provider, _ = resolve_ai_provider()
+        if provider == "deterministic":
+            return {
+                "generated_at": _utc_now(),
+                "used_ai": False,
+                "model": "deterministic-v1",
+                "recommendations": baseline_recs,
             }
-            for n in (context.get("news_events") or [])[:16]
-        ],
-    }
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are an institutional portfolio optimizer. Return strict JSON with key 'recommendations'. "
-                "Each recommendation must include: title, risk_level (Low/Medium/High), category, triggers (string[]), "
-                "explanation, supporting_metrics (object), actions (string[]), confidence (0..1). "
-                "Provide 4 to 8 actionable weekly recommendations with ticker-level sizing ideas. "
-                "Be opinionated and evidence-driven from the supplied data; do not be agreeable by default."
-            ),
-        },
-        {"role": "user", "content": json.dumps(compact_context)},
-    ]
-    raw, _, used_model = await _llm_chat(messages, json_mode=True, task="dashboard")
-    if not raw:
-        return {
-            "generated_at": _utc_now(),
-            "used_ai": False,
-            "model": "deterministic-v1",
-            "recommendations": baseline_recs,
-        }
 
-    parsed = _extract_json_object(raw)
-    if not parsed:
-        return {
-            "generated_at": _utc_now(),
-            "used_ai": False,
-            "model": "deterministic-v1",
-            "recommendations": baseline_recs,
+        compact_context = {
+            "summary": context.get("summary"),
+            "risk_profile": context.get("risk_profile"),
+            "thresholds": context.get("thresholds"),
+            "holdings": sorted(
+                [
+                    {
+                        "ticker": h.get("ticker"),
+                        "weight": h.get("weight"),
+                        "unrealized_pnl_pct": h.get("unrealized_pnl_pct"),
+                        "day_change_pct": h.get("day_change_pct"),
+                    }
+                    for h in (context.get("holdings") or [])
+                ],
+                key=lambda x: float(x.get("weight") or 0.0),
+                reverse=True,
+            )[:12],
+            "top_news": [
+                {
+                    "headline": n.get("headline"),
+                    "source": n.get("source"),
+                    "event_type": n.get("event_type"),
+                    "portfolio_impact_score": n.get("portfolio_impact_score"),
+                    "impacted": [h.get("ticker") for h in (n.get("impacted_holdings") or [])[:4]],
+                }
+                for n in (context.get("news_events") or [])[:10]
+            ],
         }
-    recs_raw = _coerce_dashboard_recommendations(parsed.get("recommendations") or parsed.get("recs"))
-    if not recs_raw:
-        recs = baseline_recs
-    else:
-        recs = await _validate_and_enrich_recommendations_with_yahoo(recs_raw)
-        if not recs:
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are an institutional portfolio optimizer. Return strict JSON with key recommendations. "
+                    "Each recommendation must include title, risk_level (Low/Medium/High), category, triggers, "
+                    "explanation, supporting_metrics, actions, confidence (0..1). "
+                    "Provide 4 to 8 actionable weekly recommendations with ticker-level sizing ideas."
+                ),
+            },
+            {"role": "user", "content": json.dumps(compact_context)},
+        ]
+        raw, _, used_model = await _llm_chat(messages, json_mode=True, task="dashboard")
+        if not raw:
+            return {
+                "generated_at": _utc_now(),
+                "used_ai": False,
+                "model": "deterministic-v1",
+                "recommendations": baseline_recs,
+            }
+
+        parsed = _extract_json_object(raw)
+        if not parsed:
+            return {
+                "generated_at": _utc_now(),
+                "used_ai": False,
+                "model": "deterministic-v1",
+                "recommendations": baseline_recs,
+            }
+        recs_raw = _coerce_dashboard_recommendations(parsed.get("recommendations") or parsed.get("recs"))
+        if not recs_raw:
             recs = baseline_recs
-    return {
-        "generated_at": _utc_now(),
-        "used_ai": True,
-        "model": used_model,
-        "recommendations": recs,
-    }
-
+        else:
+            recs = await _validate_and_enrich_recommendations_with_yahoo(recs_raw)
+            if not recs:
+                recs = baseline_recs
+        return {
+            "generated_at": _utc_now(),
+            "used_ai": True,
+            "model": used_model,
+            "recommendations": recs,
+        }
+    except Exception as exc:
+        logger.exception("generate_dashboard_recommendations failed; falling back to deterministic: %s", exc)
+        return {
+            "generated_at": _utc_now(),
+            "used_ai": False,
+            "model": "deterministic-v1",
+            "recommendations": baseline_recs,
+        }
 
 async def generate_news_summary(context: dict[str, Any]) -> dict[str, Any]:
     provider, _ = resolve_ai_provider()
@@ -2029,49 +2033,56 @@ async def generate_news_summary(context: dict[str, Any]) -> dict[str, Any]:
         text = _deterministic_news_text()
         return {"generated_at": _utc_now(), "used_ai": False, "model": "deterministic-v1", "summary": text}
 
-    prompt_payload = {
-        "portfolio_summary": {
-            "regime": summary.get("regime"),
-            "drawdown": summary.get("drawdown"),
-            "rolling_8w_vol": summary.get("rolling_8w_vol"),
-        },
-        "thresholds": context.get("thresholds") or {},
-        "top_news": [
+    try:
+        prompt_payload = {
+            "portfolio_summary": {
+                "regime": summary.get("regime"),
+                "drawdown": summary.get("drawdown"),
+                "rolling_8w_vol": summary.get("rolling_8w_vol"),
+            },
+            "thresholds": context.get("thresholds") or {},
+            "top_news": [
+                {
+                    "headline": e.get("headline"),
+                    "source": e.get("source"),
+                    "event_type": e.get("event_type"),
+                    "impact_score": e.get("portfolio_impact_score"),
+                    "rank_score": e.get("rank_score"),
+                    "sentiment": e.get("sentiment_score"),
+                    "impacted": [
+                        {
+                            "ticker": h.get("ticker"),
+                            "direction": h.get("direction"),
+                            "impact_score": h.get("impact_score"),
+                            "reason": h.get("reason"),
+                        }
+                        for h in (e.get("impacted_holdings") or [])[:4]
+                    ],
+                }
+                for e in top_news[:10]
+            ],
+            "top_impacted_holdings": top_impacted[:8],
+        }
+        messages = [
             {
-                "headline": e.get("headline"),
-                "source": e.get("source"),
-                "event_type": e.get("event_type"),
-                "impact_score": e.get("portfolio_impact_score"),
-                "rank_score": e.get("rank_score"),
-                "sentiment": e.get("sentiment_score"),
-                "impacted": [
-                    {
-                        "ticker": h.get("ticker"),
-                        "direction": h.get("direction"),
-                        "impact_score": h.get("impact_score"),
-                        "reason": h.get("reason"),
-                    }
-                    for h in (e.get("impacted_holdings") or [])[:5]
-                ],
-            }
-            for e in top_news
-        ],
-        "top_impacted_holdings": top_impacted,
-    }
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a portfolio news analyst. Produce a concise weekly-impact brief as plain text. "
-                "Use exactly three sections with these headings: "
-                "'What matters now', 'Holdings most impacted', 'Actionable watch items (7 days)'. "
-                "Make independent judgments from the provided portfolio and news data."
-            ),
-        },
-        {"role": "user", "content": json.dumps(prompt_payload)},
-    ]
-    raw, _, used_model = await _llm_chat(messages, json_mode=False, task="news")
-    if not raw:
+                "role": "system",
+                "content": (
+                    "You are a portfolio news analyst. Produce a concise weekly-impact brief as plain text. "
+                    "Use exactly three sections with these headings: "
+                    "'What matters now', 'Holdings most impacted', 'Actionable watch items (7 days)'. "
+                    "Make independent judgments from the provided portfolio and news data."
+                ),
+            },
+            {"role": "user", "content": json.dumps(prompt_payload)},
+        ]
+        raw, _, used_model = await _llm_chat(messages, json_mode=False, task="news")
+        if not raw:
+            text = _deterministic_news_text()
+            return {"generated_at": _utc_now(), "used_ai": False, "model": "deterministic-v1", "summary": text}
+        return {"generated_at": _utc_now(), "used_ai": True, "model": used_model, "summary": raw.strip()}
+    except Exception as exc:
+        logger.exception("generate_news_summary failed; falling back to deterministic: %s", exc)
         text = _deterministic_news_text()
         return {"generated_at": _utc_now(), "used_ai": False, "model": "deterministic-v1", "summary": text}
-    return {"generated_at": _utc_now(), "used_ai": True, "model": used_model, "summary": raw.strip()}
+
+

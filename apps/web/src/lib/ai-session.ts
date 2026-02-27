@@ -296,60 +296,93 @@ export async function startGlobalAIPrewarm(force = false): Promise<void> {
 
     const maxRounds = 3;
     for (let round = 1; round <= maxRounds; round += 1) {
+      const tasks: Array<Promise<void>> = [];
+
       if (!dashboardReady) {
-        const dashboard = await withRetries(() => getAIDashboardRecommendations(), 2, 800);
-        if (dashboard.ok) {
-          writeLatestDashboardRecommendations(dashboard.value.recommendations, dashboard.value.model);
-          dashboardReady = true;
-          dashboardError = "";
-        } else {
-          dashboardError = dashboard.error;
+        tasks.push((async () => {
+          const dashboard = await withRetries(() => getAIDashboardRecommendations(), 1, 600);
+          if (dashboard.ok) {
+            writeLatestDashboardRecommendations(dashboard.value.recommendations, dashboard.value.model);
+            if (dashboard.value.used_ai) {
+              dashboardReady = true;
+              dashboardError = "";
+              return;
+            }
+            dashboardError = `returned non-AI output (${dashboard.value.model || "unknown model"})`;
+          } else {
+            dashboardError = dashboard.error;
+          }
+
           const dashboardCached = readLatestDashboardRecommendations();
           dashboardReady = Boolean(
             dashboardCached &&
               Array.isArray(dashboardCached.recommendations) &&
-              dashboardCached.recommendations.length > 0,
+              dashboardCached.recommendations.length > 0 &&
+              dashboardCached.model !== "deterministic-v1" &&
+              dashboardCached.model !== "rules-fallback",
           );
+
           if (!dashboardReady) {
-            const rulesFallback = await withRetries(() => getRecommendations(), 2, 600);
+            const rulesFallback = await withRetries(() => getRecommendations(), 1, 500);
             if (rulesFallback.ok && Array.isArray(rulesFallback.value) && rulesFallback.value.length > 0) {
               writeLatestDashboardRecommendations(rulesFallback.value, "rules-fallback");
-              dashboardReady = true;
             } else if (!rulesFallback.ok) {
               dashboardError = `${dashboardError}; fallback: ${rulesFallback.error}`;
             }
           }
-        }
+        })());
       }
 
       if (!newsReady) {
-        const news = await withRetries(() => getAINewsSummary(), 2, 800);
-        if (news.ok) {
-          writeLatestNewsSummary(news.value.summary, news.value.model);
-          newsReady = true;
-          newsError = "";
-        } else {
-          newsError = news.error;
+        tasks.push((async () => {
+          const news = await withRetries(() => getAINewsSummary(), 1, 600);
+          if (news.ok) {
+            writeLatestNewsSummary(news.value.summary, news.value.model);
+            if (news.value.used_ai) {
+              newsReady = true;
+              newsError = "";
+              return;
+            }
+            newsError = `returned non-AI output (${news.value.model || "unknown model"})`;
+          } else {
+            newsError = news.error;
+          }
           const newsCached = readLatestNewsSummary();
-          newsReady = Boolean(newsCached && typeof newsCached.text === "string" && newsCached.text.trim().length > 0);
-        }
+          newsReady = Boolean(
+            newsCached &&
+              typeof newsCached.text === "string" &&
+              newsCached.text.trim().length > 0 &&
+              newsCached.model !== "deterministic-v1",
+          );
+        })());
       }
 
       if (!assistantReady) {
-        const assistant = await withRetries(() => getPortfolioInsights(), 2, 800);
-        if (assistant.ok) {
-          writeLatestAssistantInsights(assistant.value, assistant.value.model);
-          assistantReady = true;
-          assistantError = "";
-        } else {
-          assistantError = assistant.error;
+        tasks.push((async () => {
+          const assistant = await withRetries(() => getPortfolioInsights(), 1, 600);
+          if (assistant.ok) {
+            writeLatestAssistantInsights(assistant.value, assistant.value.model);
+            if (assistant.value.used_ai) {
+              assistantReady = true;
+              assistantError = "";
+              return;
+            }
+            assistantError = `returned non-AI output (${assistant.value.model || "unknown model"})`;
+          } else {
+            assistantError = assistant.error;
+          }
           const assistantCached = readLatestAssistantInsights();
           assistantReady = Boolean(
             assistantCached &&
               typeof assistantCached.summary === "string" &&
-              assistantCached.summary.trim().length > 0,
+              assistantCached.summary.trim().length > 0 &&
+              assistantCached.model !== "deterministic-v1",
           );
-        }
+        })());
+      }
+
+      if (tasks.length > 0) {
+        await Promise.all(tasks);
       }
 
       patchState({
