@@ -60,7 +60,10 @@ class Settings(BaseSettings):
 
     # ── Rate limiting ─────────────────────────────────────────────────────────
     # Max AI endpoint calls per minute per IP. 0 = disabled.
-    AI_RATE_LIMIT_PER_MINUTE: int = 20
+    # The pipeline makes 3 calls per round × 2 rounds × 2 retries = ~12 calls
+    # per pipeline run. 60 gives headroom for concurrent usage (news page
+    # auto-refresh, article briefs, chat) without false positives.
+    AI_RATE_LIMIT_PER_MINUTE: int = 60
 
     @property
     def cors_origins_list(self) -> List[str]:

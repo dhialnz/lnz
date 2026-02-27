@@ -20,9 +20,13 @@ const PREWARM_EVENT = "lnz:ai-prewarm-state";
 const DASHBOARD_LATEST_PREFIX = "lnz_weekly_ai_recs_latest_v1";
 const NEWS_LATEST_PREFIX = "lnz_news_ai_summary_latest_v1";
 const ASSISTANT_LATEST_PREFIX = "lnz_assistant_insights_latest_v1";
-const PIPELINE_MAX_ROUNDS = 6;
-const PIPELINE_STAGE_RETRIES = 3;
-const PIPELINE_RETRY_BASE_DELAY_MS = 1500;
+// Keep these low: the backend now has a tight timeout (28s max) and no
+// internal retry. Total worst-case pipeline time = MAX_ROUNDS × 3 stages ×
+// backend_timeout. At 2 rounds × 3 × 28s = ~168s ≈ 2.8 min vs the old
+// 6 rounds × 3 retries × 2 backend-attempts × 65s = ~23 minutes.
+const PIPELINE_MAX_ROUNDS = 2;
+const PIPELINE_STAGE_RETRIES = 2;
+const PIPELINE_RETRY_BASE_DELAY_MS = 600;
 
 export interface AIPrewarmState {
   epoch: number;
@@ -428,7 +432,7 @@ export async function startGlobalAIPrewarm(force = false): Promise<void> {
       });
 
       if (dashboardReady && newsReady && assistantReady) break;
-      if (round < maxRounds) await sleep(1000 * round);
+      if (round < maxRounds) await sleep(3000);
     }
 
     const errors: string[] = [];

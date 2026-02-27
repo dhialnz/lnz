@@ -167,12 +167,16 @@ def _resolve_provider_model(task: str | None = None) -> tuple[str, str]:
 
 
 def _llm_timeout_for_task(task: str | None) -> float:
+    # Fast models (Gemini Flash, gpt-4o-mini) respond in <10s normally, <20s
+    # under load. The old 65s per-attempt × 2 attempts = 130s per stage was the
+    # primary cause of the pipeline hanging. The frontend owns retries; the
+    # backend makes one clean attempt with a tight deadline.
     task_key = (task or "").strip().lower()
     if task_key in {"insights", "dashboard"}:
-        return 65.0
+        return 28.0
     if task_key == "chat":
-        return 55.0
-    return 45.0
+        return 22.0
+    return 20.0
 
 
 def _llm_max_tokens_for_task(task: str | None) -> int:
@@ -1641,7 +1645,11 @@ async def _llm_chat(
         payload["response_format"] = {"type": "json_object"}
 
     try:
-        max_attempts = 2
+        # One attempt only — the frontend pipeline already handles retries via
+        # PIPELINE_STAGE_RETRIES and PIPELINE_MAX_ROUNDS. A double-retry here
+        # multiplied the worst-case wait (timeout × 2) and caused the pipeline
+        # to stall for minutes on a single failing stage.
+        max_attempts = 1
         for attempt in range(1, max_attempts + 1):
             try:
                 async with httpx.AsyncClient(timeout=_llm_timeout_for_task(task)) as client:
