@@ -65,6 +65,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { currency, setCurrency, usdPerCad, rateLoading } = useCurrency();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [aiPrewarm, setAiPrewarm] = useState<AIPrewarmState>({
     epoch: 0,
     started: false,
@@ -85,6 +86,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
     const unsubscribe = subscribeAIPrewarm(setAiPrewarm);
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
 
   const aiReadyCount = [aiPrewarm.dashboard_ready, aiPrewarm.news_ready, aiPrewarm.assistant_ready].filter(Boolean).length;
   const aiStatusLabel = useMemo(() => {
@@ -124,9 +129,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
     ) {
       return;
     }
-    if (pathname === href) return;
+    if (pathname === href) {
+      setMobileMenuOpen(false);
+      return;
+    }
     event.preventDefault();
     router.push(href);
+    setMobileMenuOpen(false);
     // Fallback to full page nav if client transition stalls.
     window.setTimeout(() => {
       if (window.location.pathname !== href) {
@@ -136,11 +145,29 @@ export function Layout({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-surface">
-      <aside className="relative z-40 w-[260px] shrink-0 hf-surface border-r border-border/80">
+    <div className="relative flex h-screen overflow-hidden bg-surface">
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 w-[260px] hf-surface border-r border-border/80 transition-transform duration-200 ease-out lg:relative lg:z-40 lg:shrink-0",
+          mobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
+        )}
+      >
         <div className="absolute left-0 top-0 h-full w-[2px] bg-accent" />
         <div className="relative z-10 flex h-screen flex-col justify-between overflow-y-auto px-4 py-5">
           <div className="space-y-5">
+            <div className="flex items-center justify-end lg:hidden">
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(false)}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border/80 text-muted transition hover:text-white hover:bg-white/[0.03]"
+                aria-label="Close navigation"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6 6 18M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
+
             <div className="rounded-xl border border-border/80 bg-gradient-to-br from-[#11151e] via-[#111117] to-[#0f1116] p-3 shadow-[0_8px_22px_rgba(0,0,0,0.35)]">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
@@ -289,11 +316,49 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <main className="relative z-0 h-screen flex-1 overflow-y-auto min-w-0">
-        <ErrorBoundary key={pathname}>
-          <div className="min-h-full px-8 py-6 hf-fade-up">{children}</div>
-        </ErrorBoundary>
-      </main>
+      <button
+        type="button"
+        aria-label="Close menu overlay"
+        onClick={() => setMobileMenuOpen(false)}
+        className={cn(
+          "fixed inset-0 z-40 bg-black/60 backdrop-blur-[1px] transition-opacity lg:hidden",
+          mobileMenuOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
+        )}
+      />
+
+      <div className="relative z-0 flex min-w-0 flex-1 flex-col">
+        <header className="lg:hidden border-b border-border/80 bg-[#0e0f13]/95 backdrop-blur px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(true)}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border/80 text-muted transition hover:text-white hover:bg-white/[0.03]"
+              aria-label="Open navigation"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M4 7h16M4 12h16M4 17h16" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            <img
+              src="/branding/alphenzi-logo-v3.svg"
+              alt="Alphenzi"
+              width={118}
+              height={28}
+              className="h-7 w-auto"
+            />
+            <span className="inline-flex items-center gap-1 rounded-full bg-positive/10 px-2 py-1 text-[10px] font-medium text-positive">
+              <span className="h-1.5 w-1.5 rounded-full bg-positive hf-pulse-dot" />
+              LIVE
+            </span>
+          </div>
+        </header>
+
+        <main className="relative z-0 min-h-0 flex-1 overflow-y-auto">
+          <ErrorBoundary key={pathname}>
+            <div className="min-h-full px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6 hf-fade-up">{children}</div>
+          </ErrorBoundary>
+        </main>
+      </div>
     </div>
   );
 }
