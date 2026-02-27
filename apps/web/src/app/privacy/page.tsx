@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 
@@ -43,11 +43,11 @@ export default function PrivacyPage() {
         </p>
         <ul className="list-disc list-inside space-y-1 text-sm text-gray-400 pl-2">
           <li>
-            <strong className="text-gray-300">Yahoo Finance</strong> — for market prices, ticker validation,
+            <strong className="text-gray-300">Yahoo Finance</strong> â€” for market prices, ticker validation,
             and fundamentals. Your ticker symbols are sent to Yahoo&apos;s public API.
           </li>
           <li>
-            <strong className="text-gray-300">OpenAI / Google Gemini</strong> — if AI is enabled,
+            <strong className="text-gray-300">OpenAI / Google Gemini</strong> â€” if AI is enabled,
             anonymised portfolio context (holdings, metrics, news headlines) is sent to the AI provider.
             No personally identifying information is included.
           </li>
@@ -57,8 +57,7 @@ export default function PrivacyPage() {
       <section className="space-y-3">
         <h2 className="text-base font-semibold text-white">4. Data Storage</h2>
         <p className="text-sm leading-6 text-gray-400">
-          All portfolio data is stored in a locally-hosted PostgreSQL database. In self-hosted deployments,
-          you control where this database runs. No data is sent to Alphenzi servers.
+          Portfolio data is stored in a PostgreSQL database within the configured deployment environment. Data residency and infrastructure controls depend on your selected deployment model and hosting setup.
         </p>
       </section>
 
@@ -78,9 +77,10 @@ export default function PrivacyPage() {
       </section>
 
       <div className="border-t border-border pt-4 flex gap-4 text-xs text-muted">
-        <Link href="/" className="hover:text-white transition">← Back to Dashboard</Link>
+        <Link href="/" className="hover:text-white transition">â† Back to Dashboard</Link>
         <Link href="/disclaimer" className="hover:text-white transition">Disclaimer</Link>
       </div>
     </div>
   );
 }
+

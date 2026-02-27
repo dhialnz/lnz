@@ -1,26 +1,26 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Alphenzi — Institutional-grade portfolio intelligence</title>
+  <title>Alphenzi â€” Institutional-grade portfolio intelligence</title>
   <meta name="description" content="Weekly alpha vs SPY, AI news impact mapped to your holdings, and a portfolio-aware AI copilot. For serious self-directed investors. Without the Bloomberg price tag." />
-  <meta property="og:title" content="Alphenzi — Institutional-grade portfolio intelligence" />
+  <meta property="og:title" content="Alphenzi â€” Institutional-grade portfolio intelligence" />
   <meta property="og:description" content="The alpha tracker your brokerage won't build you." />
   <meta property="og:type" content="website" />
   <meta name="theme-color" content="#0A0A0B" />
 
-  <!-- Fonts: Fraunces (display, distinctive) · DM Mono (data) · Instrument Serif (brand) · Inter (body) -->
+  <!-- Fonts: Fraunces (display, distinctive) Â· DM Mono (data) Â· Instrument Serif (brand) Â· Inter (body) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,300;1,9..144,400&family=DM+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
 
   <style>
-    /* ─── Reset ──────────────────────────────────────────────── */
+    /* â”€â”€â”€ Reset â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html { scroll-behavior: smooth; }
 
-    /* ─── Design tokens ──────────────────────────────────────── */
+    /* â”€â”€â”€ Design tokens â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     :root {
       --bg:           #0A0A0B;
       --panel:        #141417;
@@ -38,7 +38,7 @@
       --caution:      #F97316;
     }
 
-    /* ─── Base ───────────────────────────────────────────────── */
+    /* â”€â”€â”€ Base â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     body {
       font-family: 'Inter', system-ui, -apple-system, sans-serif;
       background: var(--bg);
@@ -59,7 +59,7 @@
       opacity: 0.6;
     }
 
-    /* ─── Type scale ─────────────────────────────────────────── */
+    /* â”€â”€â”€ Type scale â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     .display {
       font-family: 'Fraunces', Georgia, serif;
       font-weight: 600;
@@ -69,10 +69,10 @@
     .brand { font-family: 'Instrument Serif', Georgia, serif; font-style: italic; }
     .mono  { font-family: 'DM Mono', 'Courier New', monospace; }
 
-    /* ─── Layout ─────────────────────────────────────────────── */
+    /* â”€â”€â”€ Layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     .wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
 
-    /* ─── Keyframes ──────────────────────────────────────────── */
+    /* â”€â”€â”€ Keyframes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     @keyframes fadeUp   { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
     @keyframes fadeIn   { from { opacity:0; } to { opacity:1; } }
     @keyframes slide    { 0% { transform:translateX(0); } 100% { transform:translateX(-50%); } }
@@ -88,7 +88,7 @@
     .d4   { animation-delay: 0.44s; }
     .d5   { animation-delay: 0.58s; }
 
-    /* ─── Navigation ─────────────────────────────────────────── */
+    /* â”€â”€â”€ Navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     nav {
       position: sticky; top: 0; z-index: 200;
       border-bottom: 1px solid var(--border);
@@ -114,7 +114,7 @@
     }
     .btn-nav:hover { filter:brightness(1.1); }
 
-    /* ─── Hero ───────────────────────────────────────────────── */
+    /* â”€â”€â”€ Hero â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     .hero {
       position: relative;
       padding: 92px 0 80px;
@@ -179,7 +179,7 @@
     }
     .btn-ghost:hover { border-color:var(--muted); color:var(--text); }
 
-    /* ─── Dashboard mockup ────────────────────────────────────── */
+    /* â”€â”€â”€ Dashboard mockup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     .mock-wrap { position:relative; }
     .mock-aura {
       position:absolute; inset:-50px;
@@ -250,7 +250,7 @@
     .mock-ai-lbl { font-family:'DM Mono',monospace; font-size:9px; color:var(--accent-soft); text-transform:uppercase; letter-spacing:.07em; margin-bottom:5px; }
     .mock-ai-txt { font-size:11.5px; line-height:1.55; color:var(--subtle); }
 
-    /* ─── Ticker strip ────────────────────────────────────────── */
+    /* â”€â”€â”€ Ticker strip â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     .ticker { border-top:1px solid var(--border); border-bottom:1px solid var(--border); background:var(--panel-deep); padding:12px 0; overflow:hidden; }
     .ticker-inner { display:flex; white-space:nowrap; animation:slide 28s linear infinite; }
     .t-item {
@@ -258,10 +258,10 @@
       padding:0 28px;
       font-family:'DM Mono',monospace; font-size:12px; color:var(--muted);
     }
-    .t-item::after { content:'·'; color:var(--border-hi); margin-left:4px; }
+    .t-item::after { content:'Â·'; color:var(--border-hi); margin-left:4px; }
     .t-item .hi { color:var(--accent-soft); }
 
-    /* ─── Sections ───────────────────────────────────────────── */
+    /* â”€â”€â”€ Sections â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     section { padding:100px 0; }
     .sec-label {
       display:inline-block; font-family:'DM Mono',monospace;
@@ -271,7 +271,7 @@
     .sec-h { font-size:clamp(28px,4vw,44px); color:var(--white); margin-bottom:16px; }
     .sec-sub { font-size:17px; line-height:1.65; color:var(--subtle); max-width:540px; }
 
-    /* ─── Features grid ──────────────────────────────────────── */
+    /* â”€â”€â”€ Features grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     .feat-grid {
       display:grid; grid-template-columns:repeat(3,1fr);
       gap:1px; background:var(--border);
@@ -292,7 +292,7 @@
     .feat-h { font-size:15px; font-weight:600; color:var(--white); margin-bottom:9px; }
     .feat-p { font-size:13.5px; line-height:1.65; color:var(--muted); }
 
-    /* ─── Steps ──────────────────────────────────────────────── */
+    /* â”€â”€â”€ Steps â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     .steps { display:grid; grid-template-columns:repeat(3,1fr); gap:48px; margin-top:60px; }
     .step-num {
       font-family:'Fraunces',Georgia,serif; font-weight:300;
@@ -304,7 +304,7 @@
     /* connector line between steps */
     .steps .step:not(:last-child) { position:relative; }
 
-    /* ─── Compare table ──────────────────────────────────────── */
+    /* â”€â”€â”€ Compare table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     .cmp-wrap { overflow-x:auto; margin-top:48px; }
     table {
       width:100%; border-collapse:separate; border-spacing:0;
@@ -328,7 +328,7 @@
     .cx { color:rgba(255,255,255,0.12); }
     .pt { color:var(--caution); }
 
-    /* ─── Pricing ────────────────────────────────────────────── */
+    /* â”€â”€â”€ Pricing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     .price-grid {
       display:grid; grid-template-columns:repeat(3,1fr); gap:18px;
       margin-top:52px;
@@ -357,7 +357,7 @@
     .price-div { border:none; border-top:1px solid var(--border); margin:18px 0; }
     .price-feats { list-style:none; display:flex; flex-direction:column; gap:9px; margin-bottom:26px; }
     .price-feats li { display:flex; align-items:flex-start; gap:9px; font-size:13px; color:var(--subtle); line-height:1.45; }
-    .price-feats li::before { content:'✓'; color:var(--positive); font-weight:700; flex-shrink:0; }
+    .price-feats li::before { content:'âœ“'; color:var(--positive); font-weight:700; flex-shrink:0; }
     .price-cta {
       display:block; text-align:center; padding:11px 18px;
       border-radius:9px; font-size:14px; font-weight:600;
@@ -376,7 +376,7 @@
     .self-host-note a { color:var(--accent); text-decoration:none; }
     .self-host-note a:hover { text-decoration:underline; }
 
-    /* ─── FAQ ────────────────────────────────────────────────── */
+    /* â”€â”€â”€ FAQ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     .faq-list { display:flex; flex-direction:column; gap:2px; margin-top:44px; border:1px solid var(--border); border-radius:12px; overflow:hidden; }
     details { background:var(--panel); border-bottom:1px solid var(--border); }
     details:last-child { border-bottom:none; }
@@ -393,7 +393,7 @@
     .faq-body { padding:0 22px 20px; font-size:14px; line-height:1.75; color:var(--muted); }
     .faq-body em { color:var(--subtle); font-style:normal; }
 
-    /* ─── Final CTA ──────────────────────────────────────────── */
+    /* â”€â”€â”€ Final CTA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     .final-cta {
       position:relative; text-align:center;
       padding:128px 0; overflow:hidden;
@@ -411,7 +411,7 @@
     }
     .cta-sub { font-size:17px; color:var(--subtle); margin-bottom:40px; }
 
-    /* ─── Footer ─────────────────────────────────────────────── */
+    /* â”€â”€â”€ Footer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     footer {
       border-top:1px solid var(--border); padding:44px 0;
     }
@@ -423,7 +423,7 @@
     .foot-links a:hover { color:var(--text); }
     .foot-copy { font-family:'DM Mono',monospace; font-size:12px; color:var(--muted); }
 
-    /* ─── Responsive ─────────────────────────────────────────── */
+    /* â”€â”€â”€ Responsive â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     @media (max-width: 960px) {
       .hero-inner { grid-template-columns:1fr; }
       .mock-wrap { display:none; }
@@ -443,7 +443,7 @@
 
 <body>
 
-<!-- ═══════════════════ NAV ════════════════════════════════════════════════ -->
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• NAV â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <nav>
   <div class="wrap nav-row">
     <a href="/" class="nav-logo">Alphenzi<b>.</b></a>
@@ -453,11 +453,11 @@
       <li><a href="#pricing">Pricing</a></li>
       <li><a href="#faq">FAQ</a></li>
     </ul>
-    <a href="https://app.alphenzi.com" class="btn-nav">Launch App →</a>
+    <a href="https://app.alphenzi.com" class="btn-nav">Launch App â†’</a>
   </div>
 </nav>
 
-<!-- ═══════════════════ HERO ══════════════════════════════════════════════ -->
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• HERO â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <section class="hero">
   <div class="hero-glow-l"></div>
   <div class="hero-glow-r"></div>
@@ -481,13 +481,13 @@
 
         <p class="hero-sub fu d2">
           Weekly SPY-relative alpha, AI news impact mapped to your exact holdings,
-          and a portfolio-aware copilot that knows your risk rules —
+          and a portfolio-aware copilot that knows your risk rules â€”
           for serious self-directed investors.
         </p>
 
         <div class="ctas fu d3">
           <a href="https://app.alphenzi.com" class="btn-primary">
-            Start free — no card needed
+            Start free â€” no card needed
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -513,12 +513,12 @@
               <div class="mock-m-val acc">CA$248k</div>
             </div>
             <div class="mock-m">
-              <div class="mock-m-lbl">Weekly α</div>
+              <div class="mock-m-lbl">Weekly Î±</div>
               <div class="mock-m-val pos">+1.47%</div>
             </div>
             <div class="mock-m">
               <div class="mock-m-lbl">Drawdown</div>
-              <div class="mock-m-val neg">−2.1%</div>
+              <div class="mock-m-val neg">âˆ’2.1%</div>
             </div>
           </div>
 
@@ -556,14 +556,14 @@
             <div class="mock-row">
               <span class="mock-ticker">XBB.TO</span>
               <span class="mock-wt">9.1%</span>
-              <span class="mock-chg neg">−0.42%</span>
+              <span class="mock-chg neg">âˆ’0.42%</span>
             </div>
           </div>
 
           <!-- AI insight -->
           <div class="mock-ai">
-            <div class="mock-ai-lbl">AI Copilot · This week</div>
-            <div class="mock-ai-txt">NVDA concentration at 18.2% exceeds trim threshold. Semiconductor news cycle positive — consider scaling into weakness if &gt;5% pullback.</div>
+            <div class="mock-ai-lbl">AI Copilot Â· This week</div>
+            <div class="mock-ai-txt">NVDA concentration at 18.2% exceeds trim threshold. Semiconductor news cycle positive â€” consider scaling into weakness if &gt;5% pullback.</div>
           </div>
 
         </div>
@@ -573,7 +573,7 @@
   </div>
 </section>
 
-<!-- ═══════════════════ TICKER STRIP ══════════════════════════════════════ -->
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• TICKER STRIP â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <div class="ticker">
   <div class="ticker-inner">
     <span class="t-item">Weekly Alpha <span class="hi">vs SPY</span></span>
@@ -584,7 +584,7 @@
     <span class="t-item">Excel Import</span>
     <span class="t-item">Drawdown Monitoring</span>
     <span class="t-item">Concentration Risk Alerts</span>
-    <span class="t-item">Self-Hosted Privacy</span>
+    <span class="t-item">Private Deployment</span>
     <span class="t-item">8W Volatility Budget</span>
     <span class="t-item">Relative Strength <span class="hi">vs Benchmark</span></span>
     <!-- duplicate for seamless loop -->
@@ -596,19 +596,19 @@
     <span class="t-item">Excel Import</span>
     <span class="t-item">Drawdown Monitoring</span>
     <span class="t-item">Concentration Risk Alerts</span>
-    <span class="t-item">Self-Hosted Privacy</span>
+    <span class="t-item">Private Deployment</span>
     <span class="t-item">8W Volatility Budget</span>
     <span class="t-item">Relative Strength <span class="hi">vs Benchmark</span></span>
   </div>
 </div>
 
-<!-- ═══════════════════ FEATURES ══════════════════════════════════════════ -->
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• FEATURES â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <section id="features">
   <div class="wrap">
     <div style="max-width:580px">
       <span class="sec-label">Features</span>
       <h2 class="display sec-h">Everything your brokerage withholds.</h2>
-      <p class="sec-sub">The analytics institutional desks use to make real decisions — now at a price that fits a serious self-directed investor.</p>
+      <p class="sec-sub">The analytics institutional desks use to make real decisions â€” now at a price that fits a serious self-directed investor.</p>
     </div>
 
     <div class="feat-grid">
@@ -640,7 +640,7 @@
           </svg>
         </div>
         <h3 class="feat-h">Portfolio-Aware AI Copilot</h3>
-        <p class="feat-p">An AI that knows your specific holdings, risk thresholds, and weekly performance — not a generic chatbot. Ask it anything about your portfolio and get grounded, specific answers.</p>
+        <p class="feat-p">An AI that knows your specific holdings, risk thresholds, and weekly performance â€” not a generic chatbot. Ask it anything about your portfolio and get grounded, specific answers.</p>
       </div>
 
       <div class="feat">
@@ -650,7 +650,7 @@
           </svg>
         </div>
         <h3 class="feat-h">Personalized Risk Rulebook</h3>
-        <p class="feat-p">Set your own defensive drawdown thresholds, concentration trim limits, and volatility budget. The dashboard surfaces alerts when you breach your own rules — not generic warnings.</p>
+        <p class="feat-p">Set your own defensive drawdown thresholds, concentration trim limits, and volatility budget. The dashboard surfaces alerts when you breach your own rules â€” not generic warnings.</p>
       </div>
 
       <div class="feat">
@@ -660,7 +660,7 @@
           </svg>
         </div>
         <h3 class="feat-h">CAD/USD Dual Currency</h3>
-        <p class="feat-p">Manage cross-border portfolios with real-time FX conversion. Track TSX and NYSE holdings side-by-side with live CAD/USD rates — rare in this space.</p>
+        <p class="feat-p">Manage cross-border portfolios with real-time FX conversion. Track TSX and NYSE holdings side-by-side with live CAD/USD rates â€” rare in this space.</p>
       </div>
 
       <div class="feat">
@@ -669,15 +669,15 @@
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
           </svg>
         </div>
-        <h3 class="feat-h">Privacy-First & Self-Hostable</h3>
-        <p class="feat-p">Your financial data never leaves your machine. Deploy on your own server with Docker — open-source MIT core. Or use our managed hosted version.</p>
+        <h3 class="feat-h">Privacy-First Deployment</h3>
+        <p class="feat-p">Choose managed Alphenzi hosting or private deployment in your own environment. Portfolio data stays within your configured infrastructure and access controls.</p>
       </div>
 
     </div>
   </div>
 </section>
 
-<!-- ═══════════════════ HOW IT WORKS ══════════════════════════════════════ -->
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• HOW IT WORKS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <section id="how-it-works" style="background:linear-gradient(180deg,#0d0d0f 0%,var(--bg) 100%)">
   <div class="wrap">
     <span class="sec-label">How it works</span>
@@ -688,28 +688,28 @@
       <div>
         <div class="step-num">01</div>
         <h3 class="step-h">Import your portfolio</h3>
-        <p class="step-p">Upload an Excel file, paste CSV, or enter holdings manually. Alphenzi parses your positions, cost basis, and purchase dates automatically — including legacy spreadsheet formats.</p>
+        <p class="step-p">Upload an Excel file, paste CSV, or enter holdings manually. Alphenzi parses your positions, cost basis, and purchase dates automatically â€” including legacy spreadsheet formats.</p>
       </div>
       <div>
         <div class="step-num">02</div>
         <h3 class="step-h">Run the weekly dashboard</h3>
-        <p class="step-p">Hit refresh Monday morning. Live Yahoo Finance prices are fetched, alpha vs SPY is calculated, drawdown is measured against your thresholds, and your full risk board populates — in seconds.</p>
+        <p class="step-p">Hit refresh Monday morning. Live Yahoo Finance prices are fetched, alpha vs SPY is calculated, drawdown is measured against your thresholds, and your full risk board populates â€” in seconds.</p>
       </div>
       <div>
         <div class="step-num">03</div>
         <h3 class="step-h">Let AI surface what matters</h3>
-        <p class="step-p">The AI pipeline reads your portfolio, recent news, and risk state to generate prioritized recommendations, a portfolio brief, and a buy watchlist — all grounded in your own data.</p>
+        <p class="step-p">The AI pipeline reads your portfolio, recent news, and risk state to generate prioritized recommendations, a portfolio brief, and a buy watchlist â€” all grounded in your own data.</p>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ═══════════════════ COMPARISON ════════════════════════════════════════ -->
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• COMPARISON â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <section style="background:var(--panel-deep)">
   <div class="wrap">
     <span class="sec-label">vs the alternatives</span>
     <h2 class="display sec-h">Without the $25k/year price tag.</h2>
-    <p class="sec-sub">The features that used to require a Bloomberg subscription or a full-time quant — at a price built for individual investors.</p>
+    <p class="sec-sub">The features that used to require a Bloomberg subscription or a full-time quant â€” at a price built for individual investors.</p>
 
     <div class="cmp-wrap">
       <table>
@@ -725,52 +725,52 @@
         <tbody>
           <tr>
             <td class="fn">Weekly alpha vs SPY</td>
-            <td class="a ck">✓</td>
-            <td class="cx">—</td>
-            <td class="cx">—</td>
-            <td class="cx">—</td>
+            <td class="a ck">âœ“</td>
+            <td class="cx">â€”</td>
+            <td class="cx">â€”</td>
+            <td class="cx">â€”</td>
           </tr>
           <tr>
             <td class="fn">Portfolio-aware AI copilot</td>
-            <td class="a ck">✓</td>
-            <td class="cx">—</td>
-            <td class="cx">—</td>
+            <td class="a ck">âœ“</td>
+            <td class="cx">â€”</td>
+            <td class="cx">â€”</td>
             <td class="pt">Partial</td>
           </tr>
           <tr>
             <td class="fn">News mapped to your holdings</td>
-            <td class="a ck">✓</td>
-            <td class="cx">—</td>
-            <td class="cx">—</td>
-            <td class="cx">—</td>
+            <td class="a ck">âœ“</td>
+            <td class="cx">â€”</td>
+            <td class="cx">â€”</td>
+            <td class="cx">â€”</td>
           </tr>
           <tr>
             <td class="fn">Risk rulebook / personal thresholds</td>
-            <td class="a ck">✓</td>
-            <td class="cx">—</td>
-            <td class="cx">—</td>
-            <td class="cx">—</td>
+            <td class="a ck">âœ“</td>
+            <td class="cx">â€”</td>
+            <td class="cx">â€”</td>
+            <td class="cx">â€”</td>
           </tr>
           <tr>
             <td class="fn">CAD/USD dual currency</td>
-            <td class="a ck">✓</td>
+            <td class="a ck">âœ“</td>
             <td class="pt">Partial</td>
-            <td class="ck">✓</td>
+            <td class="ck">âœ“</td>
             <td class="pt">Partial</td>
           </tr>
           <tr>
             <td class="fn">Excel / CSV import</td>
-            <td class="a ck">✓</td>
-            <td class="cx">—</td>
+            <td class="a ck">âœ“</td>
+            <td class="cx">â€”</td>
             <td class="pt">Partial</td>
-            <td class="cx">—</td>
+            <td class="cx">â€”</td>
           </tr>
           <tr>
-            <td class="fn">Self-hosted / privacy-first</td>
-            <td class="a ck">✓</td>
-            <td class="cx">—</td>
-            <td class="cx">—</td>
-            <td class="cx">—</td>
+            <td class="fn">Deployment flexibility & privacy controls</td>
+            <td class="a ck">âœ“</td>
+            <td class="cx">â€”</td>
+            <td class="cx">â€”</td>
+            <td class="cx">â€”</td>
           </tr>
           <tr>
             <td class="fn">Price (Pro tier)</td>
@@ -785,7 +785,7 @@
   </div>
 </section>
 
-<!-- ═══════════════════ PRICING ═══════════════════════════════════════════ -->
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• PRICING â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <section id="pricing">
   <div class="wrap">
     <div style="text-align:center;max-width:560px;margin:0 auto">
@@ -826,7 +826,7 @@
           <span class="price-amt">$19</span>
           <span class="price-per">/month</span>
         </div>
-        <div class="price-annual">or $180/year — save 21%</div>
+        <div class="price-annual">or $180/year â€” save 21%</div>
         <hr class="price-div">
         <ul class="price-feats">
           <li>Unlimited holdings</li>
@@ -838,7 +838,7 @@
           <li>Risk quiz + custom rulebook</li>
           <li>Email support</li>
         </ul>
-        <a href="https://app.alphenzi.com" class="price-cta main">Start Analyst — 14 days free</a>
+        <a href="https://app.alphenzi.com" class="price-cta main">Start Analyst â€” 14 days free</a>
       </div>
 
       <!-- Premium -->
@@ -849,31 +849,31 @@
           <span class="price-amt">$49</span>
           <span class="price-per">/month</span>
         </div>
-        <div class="price-annual">or $468/year — save 20%</div>
+        <div class="price-annual">or $468/year â€” save 20%</div>
         <hr class="price-div">
         <ul class="price-feats">
           <li>Everything in Analyst</li>
           <li>Priority AI (GPT-4o vs mini)</li>
-          <li>Multi-portfolio (2–3 accounts)</li>
+          <li>Multi-portfolio (2â€“3 accounts)</li>
           <li>PDF weekly report export</li>
           <li>Read-only API access</li>
           <li>Early feature access</li>
-          <li>Priority support — 24h SLA</li>
+          <li>Priority support â€” 24h SLA</li>
         </ul>
-        <a href="https://app.alphenzi.com" class="price-cta outline">Start Command — 14 days free</a>
+        <a href="https://app.alphenzi.com" class="price-cta outline">Start Command â€” 14 days free</a>
       </div>
 
     </div>
 
-    <div class="self-host-note">
-      <strong>Self-Hosted (MIT License):</strong>
-      Free forever. Bring your own API keys. One Docker command to deploy.
-      <a href="https://github.com">View on GitHub →</a>
+        <div class="self-host-note">
+      <strong>Deployment options:</strong>
+      Managed cloud and private deployment are both available. Contact us for commercial licensing and support.
+      <a href="https://app.alphenzi.com">Launch App →</a>
     </div>
   </div>
 </section>
 
-<!-- ═══════════════════ FAQ ════════════════════════════════════════════════ -->
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• FAQ â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <section id="faq" style="background:linear-gradient(180deg,#0d0d0f 0%,var(--bg) 100%)">
   <div class="wrap" style="max-width:740px;margin:0 auto">
     <span class="sec-label">FAQ</span>
@@ -884,7 +884,7 @@
       <details open>
         <summary>How is this different from just using my brokerage app?</summary>
         <div class="faq-body">
-          Brokerage apps show you raw price changes. Alphenzi shows you <em>performance relative to the market</em> — alpha — and quantifies exactly how much your own decisions added or subtracted value vs simply buying SPY. It also ties news events to your specific holdings and gives you AI-powered context, not just charts.
+          Brokerage apps show you raw price changes. Alphenzi shows you <em>performance relative to the market</em> â€” alpha â€” and quantifies exactly how much your own decisions added or subtracted value vs simply buying SPY. It also ties news events to your specific holdings and gives you AI-powered context, not just charts.
         </div>
       </details>
 
@@ -895,10 +895,10 @@
         </div>
       </details>
 
-      <details>
+            <details>
         <summary>How does the AI work? Is my data sent to OpenAI?</summary>
         <div class="faq-body">
-          The AI features use a provider chain (Gemini → OpenAI → deterministic fallback). On the hosted version, portfolio context is sent to the AI provider you choose, with your consent. For self-hosters: you control which API you use and whether AI features are enabled at all. You can run fully deterministic (no AI) at zero cost.
+          AI features use a provider chain (Gemini → OpenAI → deterministic fallback). Portfolio context is sent only to your configured provider and only when AI features are enabled. You can disable AI at any time and keep deterministic analytics active.
         </div>
       </details>
 
@@ -909,17 +909,17 @@
         </div>
       </details>
 
-      <details>
-        <summary>What does "self-hosted" mean, and who is it for?</summary>
+            <details>
+        <summary>Where can Alphenzi be deployed?</summary>
         <div class="faq-body">
-          Self-hosted means you download the code (Docker Compose) and run it on your own server or laptop. Your data never touches our servers. It's free forever under the MIT license. It's for developers, privacy-first investors, and anyone who wants to bring their own OpenAI/Gemini API keys. The hosted version is for everyone else who wants zero setup.
+          Alphenzi supports managed hosting and private deployment. Deployment model, support level, and data residency requirements are handled through commercial plans.
         </div>
       </details>
 
       <details>
         <summary>Can I cancel anytime?</summary>
         <div class="faq-body">
-          Yes. No contracts, no cancellation fees. Cancel from your account settings — you keep access until the end of the billing period. Your data can be exported as CSV at any time before or after cancellation.
+          Yes. No contracts, no cancellation fees. Cancel from your account settings â€” you keep access until the end of the billing period. Your data can be exported as CSV at any time before or after cancellation.
         </div>
       </details>
 
@@ -927,7 +927,7 @@
   </div>
 </section>
 
-<!-- ═══════════════════ FINAL CTA ══════════════════════════════════════════ -->
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• FINAL CTA â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <section class="final-cta">
   <div class="wrap">
     <p class="cta-eyebrow">Ready to track real alpha?</p>
@@ -944,7 +944,7 @@
   </div>
 </section>
 
-<!-- ═══════════════════ FOOTER ══════════════════════════════════════════════ -->
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• FOOTER â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <footer>
   <div class="wrap">
     <div class="foot-row">
@@ -956,10 +956,11 @@
         <li><a href="https://app.alphenzi.com/privacy">Privacy</a></li>
         <li><a href="https://github.com">GitHub</a></li>
       </ul>
-      <span class="foot-copy">© 2026 Alphenzi · Not financial advice.</span>
+      <span class="foot-copy">Â© 2026 Alphenzi Â· Not financial advice.</span>
     </div>
   </div>
 </footer>
 
 </body>
 </html>
+

@@ -1,4 +1,4 @@
-# LNZ — Portfolio Analytics & AI Copilot
+﻿# LNZ â€” Portfolio Analytics & AI Copilot
 
 > **Not financial advice.** LNZ is an analytics and decision-support tool. Nothing it produces constitutes a solicitation or recommendation to buy or sell any security.
 
@@ -6,27 +6,27 @@
 
 ## What Is LNZ?
 
-LNZ is a **self-hosted portfolio intelligence platform** for serious self-directed investors. It gives individual investors the kind of analytics previously reserved for institutional desks — without the Bloomberg price tag.
+LNZ is a **portfolio intelligence platform** for serious self-directed investors. It gives individual investors the kind of analytics previously reserved for institutional desks â€” without the Bloomberg price tag.
 
 **Core capabilities:**
 
 | Feature | Description |
 |---------|-------------|
-| 📊 Weekly Alpha Tracking | Portfolio return vs SPY benchmark, every week |
-| 🏛 Regime Classification | Defensive / Recovery / Expansion / Neutral — rule-based, explainable |
-| 🤖 AI Portfolio Copilot | Portfolio-aware AI chat using your actual holdings as context |
-| 📰 News Impact Mapping | News events mapped to your specific holdings with sentiment scoring |
-| ⚡ AI Catalyst Monitor | Real-time news catalyst aggregation per ticker |
-| 📈 CNN Fear & Greed | Live market sentiment index on the dashboard |
-| 💱 CAD/USD Dual Currency | Full Canadian dollar support with live FX conversion |
-| 📋 Risk Rulebook | Personalized deployment / profit-taking / stop-loss thresholds |
-| 📥 Excel Import | Upload your weekly broker export — no brokerage API access required |
+| ðŸ“Š Weekly Alpha Tracking | Portfolio return vs SPY benchmark, every week |
+| ðŸ› Regime Classification | Defensive / Recovery / Expansion / Neutral â€” rule-based, explainable |
+| ðŸ¤– AI Portfolio Copilot | Portfolio-aware AI chat using your actual holdings as context |
+| ðŸ“° News Impact Mapping | News events mapped to your specific holdings with sentiment scoring |
+| âš¡ AI Catalyst Monitor | Real-time news catalyst aggregation per ticker |
+| ðŸ“ˆ CNN Fear & Greed | Live market sentiment index on the dashboard |
+| ðŸ’± CAD/USD Dual Currency | Full Canadian dollar support with live FX conversion |
+| ðŸ“‹ Risk Rulebook | Personalized deployment / profit-taking / stop-loss thresholds |
+| ðŸ“¥ Excel Import | Upload your weekly broker export â€” no brokerage API access required |
 
 ---
 
 ## Quick Start (Docker)
 
-**Prerequisites:** Docker ≥ 24 and Docker Compose v2
+**Prerequisites:** Docker â‰¥ 24 and Docker Compose v2
 
 ```bash
 # 1. Clone the repo
@@ -34,7 +34,7 @@ git clone https://github.com/yourusername/lnz.git && cd lnz
 
 # 2. Configure your environment
 cp .env.example .env
-# Edit .env — set SECRET_KEY, FILE_ENCRYPTION_KEY, and AI keys
+# Edit .env â€” set SECRET_KEY, FILE_ENCRYPTION_KEY, and AI keys
 
 # 3. Start all services
 docker compose up --build -d
@@ -100,20 +100,20 @@ Upload a `.xlsx` file with these columns on the first sheet:
 | `Period Return` | percent | `3.65%` or `0.0365` |
 | `SPY Period Return` | percent | `1.20%` or `0.012` |
 
-`Net Deposits` and `Period Deposits` are optional — defaults to 0 if missing.
+`Net Deposits` and `Period Deposits` are optional â€” defaults to 0 if missing.
 
 ---
 
 ## AI Configuration
 
-LNZ uses a provider chain: **Gemini → OpenAI → deterministic fallback**.
+LNZ uses a provider chain: **Gemini â†’ OpenAI â†’ deterministic fallback**.
 
 | `LNZ_AI_PROVIDER` value | Behaviour |
 |------------------------|-----------|
 | `auto` | Tries Gemini first, falls back to OpenAI, then deterministic |
 | `gemini` | Gemini only |
 | `openai` | OpenAI only |
-| `deterministic` | No LLM calls — rule-based outputs only (safe default, free) |
+| `deterministic` | No LLM calls â€” rule-based outputs only (safe default, free) |
 
 Set in `.env`:
 ```env
@@ -133,7 +133,7 @@ LNZ_OPENAI_API_KEY=your-openai-key
 | **Prompt injection protection** | User data is sanitised before embedding in LLM prompts |
 | **File encryption** | Uploaded Excel files are AES-256 encrypted on disk |
 | **Rate limiting** | AI endpoints are rate-limited per IP (default: 20 req/min) |
-| **CORS** | Restricted to `CORS_ORIGINS` — no direct external browser API calls |
+| **CORS** | Restricted to `CORS_ORIGINS` â€” no direct external browser API calls |
 
 ---
 
@@ -141,12 +141,12 @@ LNZ_OPENAI_API_KEY=your-openai-key
 
 | Metric | Formula |
 |--------|---------|
-| Weekly Alpha | `Rp(t) − Rb(t)` |
-| Cumulative Alpha | `Σ Alpha(t)` |
+| Weekly Alpha | `Rp(t) âˆ’ Rb(t)` |
+| Cumulative Alpha | `Î£ Alpha(t)` |
 | Rolling 4-week Alpha | `mean(Alpha, last 4)` |
 | Rolling 8-week Volatility | `sample stdev(Rp, last 8)` |
 | Running Peak | `max(Total Value, up to t)` |
-| Drawdown | `(Total Value / Peak) − 1` |
+| Drawdown | `(Total Value / Peak) âˆ’ 1` |
 | Rolling 12-week Beta | `cov(Rp, Rb) / var(Rb)` over last 12 weeks |
 
 ---
@@ -155,9 +155,9 @@ LNZ_OPENAI_API_KEY=your-openai-key
 
 | Regime | Conditions |
 |--------|-----------|
-| **Defensive** | Rolling 4w alpha < 0 AND drawdown ≤ −8% AND vol8 increasing |
+| **Defensive** | Rolling 4w alpha < 0 AND drawdown â‰¤ âˆ’8% AND vol8 increasing |
 | **Recovery** | Alpha4 improving 3 consecutive weeks AND drawdown improving AND vol8 stable/declining |
-| **Expansion** | Alpha4 > 0 for 2 consecutive weeks AND drawdown ≥ −3% AND value within 2% of peak |
+| **Expansion** | Alpha4 > 0 for 2 consecutive weeks AND drawdown â‰¥ âˆ’3% AND value within 2% of peak |
 | **Neutral** | None of the above match |
 
 ---
@@ -166,21 +166,22 @@ LNZ_OPENAI_API_KEY=your-openai-key
 
 ```
 lnz/
-├── apps/
-│   ├── api/          FastAPI · Python 3.12 · pandas · SQLAlchemy · PostgreSQL
-│   └── web/          Next.js App Router · TypeScript · Tailwind CSS · Recharts
-├── docker-compose.yml          Development
-├── docker-compose.prod.yml     Production (Caddy HTTPS)
-├── Caddyfile                   Reverse proxy + TLS config
-└── .env.prod.example           Production env template
+â”œâ”€â”€ apps/
+â”‚   â”œâ”€â”€ api/          FastAPI Â· Python 3.12 Â· pandas Â· SQLAlchemy Â· PostgreSQL
+â”‚   â””â”€â”€ web/          Next.js App Router Â· TypeScript Â· Tailwind CSS Â· Recharts
+â”œâ”€â”€ docker-compose.yml          Development
+â”œâ”€â”€ docker-compose.prod.yml     Production (Caddy HTTPS)
+â”œâ”€â”€ Caddyfile                   Reverse proxy + TLS config
+â””â”€â”€ .env.prod.example           Production env template
 ```
 
 ---
 
 ## License
 
-MIT. Self-hosted use is free forever. Bring your own API keys.
+Proprietary. All rights reserved unless otherwise agreed in writing.
 
 ---
 
 > **Disclaimer:** LNZ is an analytics tool for informational purposes only. It is not a registered investment adviser. Past performance and AI signals are not indicators of future results. Always consult a qualified financial professional before making investment decisions.
+
