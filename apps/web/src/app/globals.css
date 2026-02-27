@@ -1,23 +1,34 @@
-@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap");
+/* ── Fonts ─────────────────────────────────────────────────────────────────── */
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,300;1,9..144,400&family=DM+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap");
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ── Design tokens ─────────────────────────────────────────────────────────── */
 :root {
-  --color-surface: #0a0a0b;
-  --color-panel: #141417;
-  --color-border: #1f1f23;
-  --color-muted: #6b6b70;
-  --color-accent: #ff5c00;
-  --color-accent-soft: #ff8a4c;
-  --color-positive: #22c55e;
-  --color-negative: #ef4444;
+  --color-surface:      #0a0a0b;
+  --color-panel:        #141417;
+  --color-panel-deep:   #0e0e10;
+  --color-border:       #1f1f23;
+  --color-border-hi:    #2a2a30;
+  --color-muted:        #6b6b70;
+  --color-subtle:       #adadb0;
+  --color-accent:       #ff5c00;
+  --color-accent-soft:  #ff8a4c;
+  --color-positive:     #22c55e;
+  --color-negative:     #ef4444;
 }
 
+/* ── Body: atmosphere + dot-grid ───────────────────────────────────────────── */
 body {
   @apply bg-surface text-gray-100 font-sans antialiased;
-  background-image: radial-gradient(circle at 12% 0%, #1a1a1d 0%, #0a0a0b 40%);
+  /* Layered background: dot grid + orange glow top-left + green hint bottom-right */
+  background-image:
+    radial-gradient(circle, rgba(255, 255, 255, 0.026) 1px, transparent 1px),
+    radial-gradient(circle at 10% 0%, rgba(255, 92, 0, 0.07) 0%, transparent 52%),
+    radial-gradient(circle at 94% 98%, rgba(34, 197, 94, 0.04) 0%, transparent 44%);
+  background-size: 28px 28px, 100% 100%, 100% 100%;
 }
 
 html,
@@ -26,14 +37,26 @@ body {
   overflow: hidden;
 }
 
+/* ── Noise overlay (subtle grain matching the landing page) ─────────────────── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.55;
+}
+
+/* ── Global border default ─────────────────────────────────────────────────── */
 * {
   border-color: var(--color-border);
 }
 
-/* Scrollbar */
+/* ── Scrollbar ─────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
 }
 ::-webkit-scrollbar-track {
   @apply bg-surface;
@@ -46,67 +69,112 @@ body {
   background: #3a3a40;
 }
 
-/* Chart tick text */
+/* ── Cards ─────────────────────────────────────────────────────────────────── */
+.hf-card {
+  @apply bg-panel border border-border rounded-xl;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 4px 20px rgba(0, 0, 0, 0.25);
+}
+
+/* Elevated variant for hover/focus */
+.hf-card-elevated {
+  @apply bg-panel border rounded-xl;
+  border-color: var(--color-border-hi);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 8px 32px rgba(0, 0, 0, 0.35);
+}
+
+/* ── Surface gradients ─────────────────────────────────────────────────────── */
+.hf-surface {
+  background: linear-gradient(180deg, #141417 0%, #111113 100%);
+}
+
+/* ── Typography utilities ──────────────────────────────────────────────────── */
+
+/* Fraunces — use for page headings and large display numbers */
+.hf-display {
+  font-family: 'Fraunces', Georgia, serif;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.06;
+}
+
+/* Section label chip — matches landing page .sec-label */
+.hf-label {
+  display: inline-block;
+  font-family: 'DM Mono', monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-accent);
+}
+
+/* ── Recharts ──────────────────────────────────────────────────────────────── */
 .recharts-cartesian-axis-tick-value {
   font-size: 11px;
   fill: #8b8b90;
   font-family: "DM Mono", monospace;
 }
-
 .recharts-tooltip-wrapper {
   outline: none;
 }
 
-.hf-surface {
-  background: linear-gradient(180deg, #141417 0%, #111113 100%);
+/* ── LLM text ──────────────────────────────────────────────────────────────── */
+.llm-copy {
+  font-family: "IBM Plex Sans", "Inter", sans-serif;
+  letter-spacing: 0.002em;
+}
+.llm-copy strong {
+  font-weight: 700;
+  color: #ffffff;
+}
+.llm-mono {
+  font-family: "IBM Plex Mono", "DM Mono", monospace;
 }
 
-.hf-card {
-  @apply bg-panel border border-border rounded-xl;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
-}
-
+/* ── Animations ────────────────────────────────────────────────────────────── */
 @keyframes fadeUp {
-  0% {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  0%   { opacity: 0; transform: translateY(12px); }
+  100% { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes glowPulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.35);
-  }
-  60% {
-    box-shadow: 0 0 0 8px rgba(34, 197, 94, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
-  }
+  0%   { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.35); }
+  60%  { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+
+@keyframes accentGlow {
+  0%   { box-shadow: 0 0 0 0 rgba(255, 92, 0, 0.3); }
+  60%  { box-shadow: 0 0 0 6px rgba(255, 92, 0, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 92, 0, 0); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: 200% center; }
+  100% { background-position: -200% center; }
 }
 
 .hf-fade-up {
-  animation: fadeUp 420ms ease-out both;
+  animation: fadeUp 440ms ease-out both;
 }
 
 .hf-pulse-dot {
   animation: glowPulse 1.8s ease-out infinite;
 }
 
-.llm-copy {
-  font-family: "IBM Plex Sans", "Inter", sans-serif;
-  letter-spacing: 0.002em;
+.hf-accent-pulse {
+  animation: accentGlow 2s ease-out infinite;
 }
 
-.llm-copy strong {
-  font-weight: 700;
-  color: #ffffff;
-}
-
-.llm-mono {
-  font-family: "IBM Plex Mono", "DM Mono", monospace;
+/* ── Accent shimmer text (for "AI Ready" etc) ──────────────────────────────── */
+.hf-shimmer {
+  background: linear-gradient(90deg, #FF5C00 0%, #FF8A4C 40%, #FF5C00 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 2.4s linear infinite;
 }

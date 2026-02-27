@@ -21,7 +21,7 @@ export function RecommendationCard({ rec, onClick }: RecommendationCardProps) {
   return (
     <button
       onClick={onClick}
-      className="w-full text-left bg-panel border border-border rounded-lg p-4 hover:border-accent/40 transition-colors group"
+      className="w-full text-left bg-panel border border-border rounded-lg p-4 hover:border-accent/40 hover:shadow-[0_0_0_1px_rgba(255,92,0,0.1),0_4px_20px_rgba(255,92,0,0.07)] transition-all duration-200 group"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">

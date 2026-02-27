@@ -24,6 +24,7 @@ const config: Config = {
         mono: ["'DM Mono'", "ui-monospace", "SFMono-Regular", "monospace"],
         sans: ["'Inter'", "ui-sans-serif", "system-ui", "sans-serif"],
         serif: ["'Instrument Serif'", "ui-serif", "Georgia", "serif"],
+        display: ["'Fraunces'", "Georgia", "serif"],
       },
     },
   },

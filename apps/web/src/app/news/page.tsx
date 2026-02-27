@@ -182,16 +182,25 @@ function writeCachedArticleSummary(eventId: string, cache: ArticleSummaryCache):
 
 function ThinkingIndicator({ label }: { label: string }) {
   return (
-    <div className="flex items-center gap-2 text-xs font-mono text-muted">
-      <span>{label}</span>
-      <span className="inline-flex items-center gap-1">
+    <div className="flex items-center gap-2.5 py-1">
+      <span className="inline-flex gap-0.5">
         <span className="h-1.5 w-1.5 rounded-full bg-accent animate-bounce [animation-delay:-0.2s]" />
         <span className="h-1.5 w-1.5 rounded-full bg-accent animate-bounce [animation-delay:-0.1s]" />
         <span className="h-1.5 w-1.5 rounded-full bg-accent animate-bounce" />
       </span>
+      <span className="text-xs font-mono text-muted">{label}</span>
     </div>
   );
 }
+
+/* ── Event type badge colour map ───────────────────────────────────────────── */
+const EVENT_TYPE_BADGE: Record<string, string> = {
+  macro:        "border-blue-500/30 text-blue-300 bg-black/60",
+  earnings:     "border-positive/30 text-positive bg-black/60",
+  geopolitical: "border-red-500/30 text-red-300 bg-black/60",
+  sector:       "border-purple-400/30 text-purple-300 bg-black/60",
+  general:      "border-white/15 text-gray-400 bg-black/60",
+};
 
 function ScrollableNewsRail({
   events,
@@ -238,29 +247,35 @@ function ScrollableNewsRail({
 
   return (
     <div className="relative">
+      {/* Left arrow */}
       <button
         type="button"
         onClick={() => scrollByPage(-1)}
         aria-label="Scroll left"
         className={cn(
-          "absolute left-1 top-1/2 z-20 -translate-y-1/2 rounded-full border border-border bg-[#0E1016]/95 px-2 py-1 text-sm text-gray-200 shadow transition",
+          "absolute left-0 top-1/2 z-20 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full border border-border/80 bg-[#0e0e10]/95 text-gray-400 shadow-lg transition-all duration-200",
           canLeft ? "opacity-100 hover:border-accent/40 hover:text-white" : "pointer-events-none opacity-0",
         )}
       >
-        {"<"}
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
       </button>
+      {/* Right arrow */}
       <button
         type="button"
         onClick={() => scrollByPage(1)}
         aria-label="Scroll right"
         className={cn(
-          "absolute right-1 top-1/2 z-20 -translate-y-1/2 rounded-full border border-border bg-[#0E1016]/95 px-2 py-1 text-sm text-gray-200 shadow transition",
+          "absolute right-0 top-1/2 z-20 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full border border-border/80 bg-[#0e0e10]/95 text-gray-400 shadow-lg transition-all duration-200",
           canRight ? "opacity-100 hover:border-accent/40 hover:text-white" : "pointer-events-none opacity-0",
         )}
       >
-        {">"}
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <path d="M9 18l6-6-6-6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
       </button>
-      <div ref={railRef} className="flex gap-3 overflow-x-auto pb-2 px-9">
+      <div ref={railRef} className="flex gap-3 overflow-x-auto pb-2 px-10">
         {events.map((ev, index) => renderItem(ev, index))}
       </div>
     </div>
@@ -609,76 +624,139 @@ export default function NewsPage() {
     [aiEnabled, articleSummaryCache, buildArticlePrompt, ensureHoldingImpactSection],
   );
 
+  /* ── News card renderer ─────────────────────────────────────────────────── */
   const renderCard = (ev: NewsEventImpact, large = false) => {
     const img = imageFor(ev);
     const isNew = hoursAgo(ev.event.captured_at) < 12;
     const isActive = activeArticleId === ev.event.id;
-    const impactedLine =
-      ev.impacted_holdings.length > 0
-        ? ev.impacted_holdings
-            .slice(0, 3)
-            .map((h) => `${h.ticker} ${Math.round(h.impact_score * 100)}%`)
-            .join(" | ")
-        : "No direct portfolio linkage";
+    const typeBadge = EVENT_TYPE_BADGE[ev.event.event_type] ?? EVENT_TYPE_BADGE.general;
 
     return (
       <article
         key={ev.event.id}
         className={cn(
-          "relative shrink-0 overflow-hidden rounded-xl border border-border bg-panel",
-          isActive && "ring-1 ring-accent/60 border-accent/50",
+          "relative shrink-0 overflow-hidden rounded-xl border transition-all duration-200 group",
+          isActive
+            ? "border-accent/60 shadow-[0_0_0_1px_rgba(255,92,0,0.25),0_0_24px_rgba(255,92,0,0.1)]"
+            : "border-border/80 hover:border-[#2a2a30]",
           large ? "w-[360px] h-[230px]" : "w-[290px] h-[190px]",
         )}
       >
-        <div className="absolute inset-0 bg-center bg-cover" style={{ backgroundImage: `url(${img})` }} />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 to-black/10" />
+        {/* Background image with subtle zoom on hover */}
+        <div
+          className="absolute inset-0 bg-center bg-cover transition-transform duration-500 group-hover:scale-[1.03]"
+          style={{ backgroundImage: `url(${img})` }}
+        />
+        {/* Rich gradient — heavier at bottom for legibility */}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#08080a]/97 via-[#08080a]/55 to-transparent" />
 
-        <div className="absolute top-2 left-2 flex items-center gap-1">
-          {isNew && <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-red-600 text-white">NEW</span>}
-          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/65 text-gray-200">
-            rank {ev.rank_score.toFixed(2)}
-          </span>
-          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/65 text-gray-200">
-            impact {ev.portfolio_impact_score.toFixed(2)}
+        {/* ── Top badges ──────────────────────────────────────────────────── */}
+        <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+          {isNew && (
+            <span className="text-[9px] font-mono tracking-[0.14em] uppercase px-2 py-0.5 rounded-full bg-accent text-white font-semibold shadow-[0_0_8px_rgba(255,92,0,0.5)]">
+              LIVE
+            </span>
+          )}
+          <span className={cn("text-[9px] font-mono tracking-[0.06em] uppercase px-1.5 py-0.5 rounded border", typeBadge)}>
+            {ev.event.event_type}
           </span>
         </div>
 
-        <div className="absolute bottom-0 left-0 right-0 p-3 space-y-1">
-          <p className="text-[11px] font-mono text-gray-300">
-            {ev.event.source} | {new Date(ev.event.captured_at).toLocaleDateString()}
-          </p>
-          <h3 className="text-sm leading-tight text-gray-100 max-h-10 overflow-hidden">{ev.event.headline}</h3>
-          <div className="flex items-center gap-2 text-[11px] font-mono">
-            <span className={cn("font-semibold", sentimentColor(ev.event.sentiment_score))}>
-              Sent {ev.event.sentiment_score != null ? ev.event.sentiment_score.toFixed(2) : "-"}
+        {/* Impact score — top right */}
+        <div className="absolute top-2.5 right-2.5">
+          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-black/70 text-accent border border-accent/25">
+            {(ev.portfolio_impact_score * 100).toFixed(0)}% impact
+          </span>
+        </div>
+
+        {/* ── Bottom content ───────────────────────────────────────────────── */}
+        <div className="absolute bottom-0 left-0 right-0 p-3 space-y-1.5">
+          {/* Source · date · sentiment */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-mono text-gray-400 truncate">{ev.event.source}</span>
+            <span className="text-gray-600 shrink-0 text-[9px]">·</span>
+            <span className="text-[10px] font-mono text-gray-500 shrink-0">
+              {new Date(ev.event.captured_at).toLocaleDateString()}
             </span>
-            <span className="text-caution">
-              Vol {ev.event.volatility_score != null ? ev.event.volatility_score.toFixed(2) : "-"}
-            </span>
-            <span className="text-accent uppercase">{ev.event.event_type}</span>
+            {ev.event.sentiment_score != null && (
+              <span className={cn("ml-auto text-[10px] font-mono font-semibold shrink-0", sentimentColor(ev.event.sentiment_score))}>
+                {ev.event.sentiment_score > 0 ? "+" : ""}{ev.event.sentiment_score.toFixed(2)}
+              </span>
+            )}
           </div>
-          <p className="text-[10px] font-mono text-yellow-200 truncate">Most impacted: {impactedLine}</p>
+
+          {/* Headline */}
+          <h3 className="text-[13px] font-medium leading-snug text-gray-100 group-hover:text-white transition-colors"
+            style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+            {ev.event.headline}
+          </h3>
+
+          {/* Holdings chips */}
+          {ev.impacted_holdings.length > 0 && (
+            <div className="flex items-center gap-1 flex-wrap">
+              {ev.impacted_holdings.slice(0, 3).map((h) => (
+                <span
+                  key={h.ticker}
+                  className={cn(
+                    "text-[9px] font-mono px-1.5 py-0.5 rounded border",
+                    h.direction === "negative"
+                      ? "text-negative border-negative/30 bg-negative/10"
+                      : h.direction === "positive"
+                        ? "text-positive border-positive/30 bg-positive/10"
+                        : "text-muted border-white/10 bg-white/[0.04]",
+                  )}
+                >
+                  {h.ticker}
+                </span>
+              ))}
+              {ev.impacted_holdings.length > 3 && (
+                <span className="text-[9px] font-mono text-muted/50">+{ev.impacted_holdings.length - 3}</span>
+              )}
+            </div>
+          )}
+
+          {/* Action row */}
           <div className="flex items-center gap-2 pt-0.5">
             <button
               type="button"
               onClick={() => void handleGenerateArticleSummary(ev)}
               className={cn(
-                "text-[11px] font-mono rounded border px-2 py-0.5 transition-colors",
+                "inline-flex items-center gap-1 text-[10px] font-mono rounded-full border px-2.5 py-0.5 transition-all duration-200",
                 isActive
                   ? "border-accent/60 bg-accent/15 text-accent"
-                  : "border-border bg-black/45 text-gray-100 hover:border-accent/40 hover:text-accent",
+                  : "border-white/20 bg-black/45 text-gray-300 hover:border-accent/40 hover:text-accent",
               )}
             >
-              {isActive && articleSummaryLoading ? "Generating..." : "AI Summary"}
+              {isActive && articleSummaryLoading ? (
+                <>
+                  <span className="inline-flex gap-0.5">
+                    <span className="h-1 w-1 rounded-full bg-current animate-bounce [animation-delay:-0.2s]" />
+                    <span className="h-1 w-1 rounded-full bg-current animate-bounce [animation-delay:-0.1s]" />
+                    <span className="h-1 w-1 rounded-full bg-current animate-bounce" />
+                  </span>
+                  Analyzing
+                </>
+              ) : (
+                <>
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M12 3l1.5 3.5L17 8l-3.5 1.5L12 13l-1.5-3.5L7 8l3.5-1.5z" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  {isActive ? "Active" : "AI Brief"}
+                </>
+              )}
             </button>
             {ev.event.url && (
               <a
                 href={ev.event.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-block text-xs font-mono text-accent hover:underline"
+                className="inline-flex items-center gap-0.5 text-[10px] font-mono text-muted/60 hover:text-gray-200 transition-colors"
               >
-                Open article
+                Read
+                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M15 3h6v6M10 14L21 3" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
               </a>
             )}
           </div>
@@ -687,150 +765,204 @@ export default function NewsPage() {
     );
   };
 
+  /* ── Page ───────────────────────────────────────────────────────────────── */
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-4xl leading-none font-serif tracking-tight text-white">Weekly Alpha Command Center</h1>
-          <p className="text-xs font-mono text-muted mt-0.5">
-            Headlines ranked by importance/recency and mapped to direct + indirect portfolio impact.
-          </p>
-          <p className="text-[11px] font-mono text-muted mt-1">
-            Auto-refresh every {Math.round(NEWS_AUTO_REFRESH_MS / 1000)}s while this tab is visible.
-            {autoRefreshing ? " Updating..." : ""}
-          </p>
+    <div className="space-y-5">
+
+      {/* ── Page header ─────────────────────────────────────────────────────── */}
+      <section className="hf-card px-6 py-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-1.5">
+            <span className="hf-label">Market Intelligence</span>
+            <h1 className="hf-display text-4xl leading-none text-white">News Flow</h1>
+            <p className="text-sm text-muted mt-1">
+              Headlines ranked by portfolio impact, mapped to your positions.
+            </p>
+            <p className="text-[11px] font-mono text-muted/60">
+              Auto-refresh every {Math.round(NEWS_AUTO_REFRESH_MS / 1000)}s.
+              {autoRefreshing && <span className="ml-1.5 text-accent animate-pulse">Updating…</span>}
+            </p>
+          </div>
+          <button
+            onClick={handleIngest}
+            disabled={ingesting}
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-accent px-3.5 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M1 4v6h6M23 20v-6h-6" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            {ingesting ? "Refreshing…" : "Refresh News"}
+          </button>
         </div>
-        <button
-          onClick={handleIngest}
-          disabled={ingesting}
-          className="text-xs font-mono bg-accent/10 hover:bg-accent/20 text-accent border border-accent/30 rounded px-3 py-1.5 transition-colors disabled:opacity-50"
-        >
-          {ingesting ? "Refreshing..." : "Refresh News"}
-        </button>
+      </section>
+
+      {/* ── Filter bar ──────────────────────────────────────────────────────── */}
+      <div className="hf-card px-4 py-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Search input */}
+          <div className="relative">
+            <svg
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted pointer-events-none"
+              width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+            >
+              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Filter by ticker or entity…"
+              value={filterEntity}
+              onChange={(e) => setFilterEntity(e.target.value)}
+              className="bg-[#101013] border border-border rounded-lg pl-7 pr-3 py-1.5 text-xs font-mono text-gray-200 placeholder-muted/50 focus:outline-none focus:border-accent/60 w-56 transition-colors"
+            />
+          </div>
+          {/* Relevance filter */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-mono text-muted uppercase tracking-wider">Relevance ≥</span>
+            <input
+              type="number"
+              step="0.1"
+              min="0"
+              value={minRelevance}
+              onChange={(e) => setMinRelevance(Number(e.target.value || 0))}
+              className="w-14 bg-[#101013] border border-border rounded-lg px-2 py-1.5 text-xs font-mono text-gray-200 focus:outline-none focus:border-accent/60 transition-colors"
+            />
+          </div>
+          {/* Importance filter */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-mono text-muted uppercase tracking-wider">Importance ≥</span>
+            <input
+              type="number"
+              step="0.1"
+              min="0"
+              value={minImportance}
+              onChange={(e) => setMinImportance(Number(e.target.value || 0))}
+              className="w-14 bg-[#101013] border border-border rounded-lg px-2 py-1.5 text-xs font-mono text-gray-200 focus:outline-none focus:border-accent/60 transition-colors"
+            />
+          </div>
+          {/* Article count pill */}
+          <div className="ml-auto">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#101013] border border-border/80 px-2.5 py-1 text-[10px] font-mono text-muted">
+              <span className="h-1.5 w-1.5 rounded-full bg-positive" />
+              {uniqueFilteredEvents.length} of {events.length} articles
+            </span>
+          </div>
+        </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <input
-          type="text"
-          placeholder="Filter by ticker/entity (e.g. SPY, NVDA, VFV)"
-          value={filterEntity}
-          onChange={(e) => setFilterEntity(e.target.value)}
-          className="bg-surface border border-border rounded px-3 py-1.5 text-xs font-mono text-gray-200 placeholder-muted focus:outline-none focus:border-accent"
-        />
-        <label className="text-xs font-mono text-muted flex items-center gap-2">
-          Relevance &gt;=
-          <input
-            type="number"
-            step="0.1"
-            min="0"
-            value={minRelevance}
-            onChange={(e) => setMinRelevance(Number(e.target.value || 0))}
-            className="w-16 bg-surface border border-border rounded px-2 py-1 text-xs text-gray-200"
-          />
-        </label>
-        <label className="text-xs font-mono text-muted flex items-center gap-2">
-          Importance &gt;=
-          <input
-            type="number"
-            step="0.1"
-            min="0"
-            value={minImportance}
-            onChange={(e) => setMinImportance(Number(e.target.value || 0))}
-            className="w-16 bg-surface border border-border rounded px-2 py-1 text-xs text-gray-200"
-          />
-        </label>
-        <span className="text-xs font-mono text-muted">
-          Showing {uniqueFilteredEvents.length} unique of {events.length} impact-ranked articles
-        </span>
-      </div>
-
+      {/* ── Error ───────────────────────────────────────────────────────────── */}
       {error && (
-        <div className="bg-panel border border-negative/30 rounded p-3">
+        <div className="hf-card border-negative/30 px-4 py-3">
           <p className="text-xs font-mono text-negative">{error}</p>
         </div>
       )}
 
+      {/* ── Portfolio Exposure ──────────────────────────────────────────────── */}
       {impactData && impactData.top_impacted_holdings.length > 0 && (
-        <section className="bg-panel border border-border rounded-lg p-4 space-y-2">
-          <h2 className="text-sm font-semibold text-gray-100">Most Exposed Holdings Right Now</h2>
+        <section className="hf-card p-5 space-y-3">
+          <p className="hf-label">Portfolio Exposure</p>
           <div className="flex flex-wrap gap-2">
             {impactData.top_impacted_holdings.slice(0, 8).map((h) => (
-              <span
+              <div
                 key={h.ticker}
                 className={cn(
-                  "text-xs font-mono px-2 py-1 rounded border",
+                  "flex items-center gap-1.5 rounded-lg border px-3 py-1.5",
                   h.direction === "negative"
-                    ? "border-negative/40 text-negative"
+                    ? "border-negative/25 bg-negative/[0.07]"
                     : h.direction === "positive"
-                      ? "border-positive/40 text-positive"
-                      : "border-border text-muted",
+                      ? "border-positive/25 bg-positive/[0.07]"
+                      : "border-border/80 bg-[#101013]",
                 )}
               >
-                {h.ticker} {(h.impact_score * 100).toFixed(0)}%
-              </span>
+                <span
+                  className={cn(
+                    "h-1.5 w-1.5 rounded-full",
+                    h.direction === "negative" ? "bg-negative" : h.direction === "positive" ? "bg-positive" : "bg-muted",
+                  )}
+                />
+                <span
+                  className={cn(
+                    "text-xs font-mono font-semibold",
+                    h.direction === "negative" ? "text-negative" : h.direction === "positive" ? "text-positive" : "text-gray-300",
+                  )}
+                >
+                  {h.ticker}
+                </span>
+                <span className="text-[10px] font-mono text-muted">{(h.impact_score * 100).toFixed(0)}%</span>
+              </div>
             ))}
           </div>
         </section>
       )}
 
-      <section className="bg-panel border border-border rounded-lg p-4 space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-gray-100">AI Impact Summary</h2>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleRegenerateAllAI}
-              disabled={!impactData || aiSummaryLoading}
-              className="text-xs font-mono border border-accent/30 text-accent rounded px-3 py-1.5 hover:bg-accent/10 disabled:opacity-50"
-            >
-              {aiSummaryLoading ? "Generating..." : "Regenerate"}
-            </button>
+      {/* ── AI Impact Summary ───────────────────────────────────────────────── */}
+      <section className="hf-card p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="hf-label">AI Analysis</p>
+            <h2 className="mt-0.5 text-base font-semibold text-white">Portfolio Impact Summary</h2>
           </div>
+          <button
+            onClick={handleRegenerateAllAI}
+            disabled={!impactData || aiSummaryLoading}
+            className="shrink-0 text-[11px] font-mono border border-accent/30 text-accent rounded-lg px-3 py-1.5 hover:bg-accent/10 transition-colors disabled:opacity-50"
+          >
+            {aiSummaryLoading ? "Generating…" : "Regenerate"}
+          </button>
         </div>
         {!aiEnabled ? (
           <p className="text-xs text-muted">AI API is disabled. Add your API key on backend and restart.</p>
         ) : aiSummaryLoading ? (
-          <ThinkingIndicator label="Generating AI summary" />
+          <ThinkingIndicator label="Generating portfolio news brief…" />
         ) : aiSummary ? (
-          <>
-            <p className="text-[11px] font-mono text-muted">Model: {aiModel ?? "unknown"}</p>
+          <div className="space-y-2">
+            <span className="inline-flex items-center gap-1 rounded border border-border/60 bg-[#101013] px-2 py-0.5 text-[10px] font-mono text-muted">
+              {aiModel ?? "unknown"}
+            </span>
             <LLMText text={aiSummary} lineClassName="text-xs text-gray-200 leading-5" />
-          </>
+          </div>
         ) : (
           <p className="text-xs text-muted">No AI summary generated yet.</p>
         )}
         {aiSummaryError && <p className="text-xs font-mono text-negative">{aiSummaryError}</p>}
       </section>
 
-      <section className="bg-panel border border-border rounded-lg p-4 space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-gray-100">Article AI Brief</h2>
+      {/* ── Article AI Brief ────────────────────────────────────────────────── */}
+      <section className="hf-card p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="hf-label">Article Intelligence</p>
+            <h2 className="mt-0.5 text-base font-semibold text-white">Article AI Brief</h2>
+          </div>
           {activeArticle && (
-            <p className="text-[11px] font-mono text-muted">
-              {activeArticle.event.source} | {new Date(activeArticle.event.captured_at).toLocaleString()}
-            </p>
+            <span className="shrink-0 text-[10px] font-mono text-muted">
+              {activeArticle.event.source} · {new Date(activeArticle.event.captured_at).toLocaleString()}
+            </span>
           )}
         </div>
         {!aiEnabled ? (
           <p className="text-xs text-muted">AI API is disabled. Add your API key on backend and restart.</p>
         ) : !activeArticle ? (
-          <p className="text-xs text-muted">Select AI Summary on a news card to generate an article-level brief.</p>
+          <p className="text-xs text-muted">Click &ldquo;AI Brief&rdquo; on any news card to generate an article-level brief.</p>
         ) : articleSummaryLoading && !activeArticleSummary ? (
-          <ThinkingIndicator label="Thinking through article and portfolio context..." />
+          <ThinkingIndicator label="Analyzing article against your portfolio…" />
         ) : activeArticleSummary ? (
-          <>
-            <p className="text-[11px] font-mono text-muted">Model: {activeArticleSummary.model}</p>
+          <div className="space-y-4">
+            <span className="inline-flex items-center gap-1 rounded border border-border/60 bg-[#101013] px-2 py-0.5 text-[10px] font-mono text-muted">
+              {activeArticleSummary.model}
+            </span>
             <LLMText text={activeArticleSummary.text} lineClassName="text-xs text-gray-200 leading-5" />
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              <div>
-                <h3 className="text-xs font-mono uppercase tracking-wider text-muted mb-2">Holdings Impact Map</h3>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 pt-1">
+              <div className="space-y-2">
+                <h3 className="hf-label">Holdings Impact Map</h3>
                 <LLMText
                   text={buildHoldingImpactAppendix(activeArticle)}
                   lineClassName="text-xs text-gray-300 leading-5"
                 />
               </div>
-              <div>
-                <h3 className="text-xs font-mono uppercase tracking-wider text-muted mb-2">Evidence Sources</h3>
-                <div className="max-h-56 overflow-y-auto rounded-md border border-border bg-[#101013] p-3">
+              <div className="space-y-2">
+                <h3 className="hf-label">Evidence Sources</h3>
+                <div className="max-h-56 overflow-y-auto rounded-lg border border-border bg-[#0e0e10] p-3">
                   <LLMText
                     text={
                       activeArticleSummary.sources.length > 0
@@ -844,29 +976,41 @@ export default function NewsPage() {
                 </div>
               </div>
             </div>
-          </>
+          </div>
         ) : (
-          <p className="text-xs text-muted">No article AI brief generated yet.</p>
+          <p className="text-xs text-muted">No article brief generated yet.</p>
         )}
         {articleSummaryError && <p className="text-xs font-mono text-negative">{articleSummaryError}</p>}
       </section>
 
+      {/* ── News rails ──────────────────────────────────────────────────────── */}
       {loading ? (
-        <div className="space-y-3">
-          <div className="h-40 bg-panel border border-border rounded-lg animate-pulse" />
-          <div className="h-40 bg-panel border border-border rounded-lg animate-pulse" />
+        <div className="space-y-6">
+          {[1, 2].map((i) => (
+            <section key={i} className="space-y-3">
+              <div className="h-2.5 w-28 bg-panel rounded-full animate-pulse" />
+              <div className="flex gap-3 overflow-hidden px-10">
+                {[1, 2, 3, 4].map((j) => (
+                  <div key={j} className="shrink-0 w-[290px] h-[190px] bg-panel border border-border/50 rounded-xl animate-pulse" />
+                ))}
+              </div>
+            </section>
+          ))}
         </div>
       ) : uniqueFilteredEvents.length === 0 ? (
-        <div className="text-center py-12">
-          <p className="text-muted font-mono text-sm">
-            No news matched the relevance/importance filters. Lower thresholds or refresh news.
-          </p>
+        <div className="hf-card py-16 text-center">
+          <p className="text-muted font-mono text-sm">No news matched the current filters. Lower thresholds or refresh.</p>
         </div>
       ) : (
         <>
           {companySpecific.length > 0 && (
             <section className="space-y-3">
-              <h2 className="text-sm font-semibold text-gray-100">Company-Specific to Your Holdings</h2>
+              <div className="flex items-center gap-2.5">
+                <h2 className="text-sm font-semibold text-white">Company-Specific</h2>
+                <span className="text-[10px] font-mono text-muted border border-border/50 rounded-full px-2 py-0.5 bg-[#101013]">
+                  {companySpecific.slice(0, 12).length} stories
+                </span>
+              </div>
               <ScrollableNewsRail
                 events={companySpecific.slice(0, 12)}
                 renderItem={(ev) => renderCard(ev, false)}
@@ -875,7 +1019,12 @@ export default function NewsPage() {
           )}
 
           <section className="space-y-3">
-            <h2 className="text-sm font-semibold text-gray-100">Top Portfolio-Impact Picks</h2>
+            <div className="flex items-center gap-2.5">
+              <h2 className="text-sm font-semibold text-white">Top Portfolio-Impact Picks</h2>
+              <span className="text-[10px] font-mono text-muted border border-border/50 rounded-full px-2 py-0.5 bg-[#101013]">
+                {topPicks.length} stories
+              </span>
+            </div>
             <ScrollableNewsRail events={topPicks} renderItem={(ev) => renderCard(ev, true)} />
           </section>
 
@@ -884,7 +1033,12 @@ export default function NewsPage() {
             if (list.length === 0) return null;
             return (
               <section key={type} className="space-y-3">
-                <h2 className="text-sm font-semibold text-gray-100 capitalize">{type}</h2>
+                <div className="flex items-center gap-2.5">
+                  <h2 className="text-sm font-semibold text-white capitalize">{type}</h2>
+                  <span className="text-[10px] font-mono text-muted border border-border/50 rounded-full px-2 py-0.5 bg-[#101013]">
+                    {list.length} stories
+                  </span>
+                </div>
                 <ScrollableNewsRail events={list} renderItem={(ev) => renderCard(ev, false)} />
               </section>
             );

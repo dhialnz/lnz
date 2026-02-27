@@ -1280,8 +1280,9 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <section className="hf-card px-6 py-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="space-y-1">
-            <h1 className="text-4xl leading-none font-serif tracking-tight text-white">Weekly Alpha Command Center</h1>
+          <div className="space-y-1.5">
+            <span className="hf-label">Weekly Dashboard</span>
+            <h1 className="hf-display text-4xl leading-none text-white">Alpha Command Center</h1>
             <p className="text-sm text-muted">
               Professional hedge fund monitoring across risk, execution, and alpha signals.
             </p>

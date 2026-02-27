@@ -168,7 +168,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               </button>
             </div>
 
-            <div className="rounded-xl border border-border/80 bg-gradient-to-br from-[#11151e] via-[#111117] to-[#0f1116] p-3 shadow-[0_8px_22px_rgba(0,0,0,0.35)]">
+            <div className="rounded-xl border border-accent/20 bg-gradient-to-br from-[#11151e] via-[#111117] to-[#0f1116] p-3 shadow-[0_8px_22px_rgba(0,0,0,0.35),0_0_0_1px_rgba(255,92,0,0.06)]">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <img
@@ -199,7 +199,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     className={cn(
                       "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200",
                       active
-                        ? "bg-white/[0.04] text-white"
+                        ? "bg-accent/[0.07] text-white shadow-[inset_2px_0_0_0_#FF5C00,0_0_12px_rgba(255,92,0,0.05)]"
                         : "text-[#8B8B90] hover:bg-white/[0.02] hover:text-[#CFCFD2]",
                     )}
                   >
@@ -211,7 +211,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </nav>
 
             <div className="rounded-xl border border-border/80 bg-[#101013] p-3 space-y-2">
-              <p className="text-[10px] font-mono uppercase tracking-wider text-muted">AI Pipeline</p>
+              <p className="hf-label">AI Pipeline</p>
               <div className={cn("flex items-center justify-between rounded-md px-1", aiPipelineBusy ? "bg-accent/10" : "")}>
                 <span className="text-xs font-mono text-white">{aiStatusLabel}</span>
                 {!aiPrewarm.completed && aiPrewarm.started ? (
@@ -265,7 +265,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </div>
 
             <div className="rounded-xl border border-border/80 bg-[#101013] p-3 space-y-2">
-              <p className="text-[10px] font-mono uppercase tracking-wider text-muted">Currency</p>
+              <p className="hf-label">Currency</p>
               <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-border">
                 <button
                   onClick={() => setCurrency("CAD")}
