@@ -32,7 +32,7 @@ const BASE_URL = "/api/v1";
 // Default request timeout — AI endpoints can take 30+ s, regular data calls
 // should complete much faster.
 const DEFAULT_TIMEOUT_MS = 45_000;
-const AI_TIMEOUT_MS = 60_000;
+const AI_TIMEOUT_MS = 90_000;
 
 const AI_PATHS = ["/ai/chat", "/ai/portfolio-insights", "/ai/dashboard-recommendations", "/ai/news-summary"];
 
@@ -59,9 +59,12 @@ async function request<T>(
     clearTimeout(timer);
     if (!res.ok) {
       const detail = await res.json().catch(() => ({ detail: res.statusText }));
-      // Retry once on 502/503/504 (transient gateway errors).
-      if (_retries > 0 && [502, 503, 504].includes(res.status) && method === "GET") {
-        await new Promise((r) => setTimeout(r, 1000));
+      // Retry once on transient upstream/rate-limit errors.
+      if (_retries > 0 && [408, 429, 502, 503, 504].includes(res.status) && method === "GET") {
+        const retryAfterHeader = res.headers.get("Retry-After");
+        const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : Number.NaN;
+        const retryDelayMs = Number.isFinite(retryAfterSeconds) ? Math.max(500, retryAfterSeconds * 1000) : 1200;
+        await new Promise((r) => setTimeout(r, retryDelayMs));
         return request<T>(path, init, _retries - 1);
       }
       throw new Error(detail?.detail ?? `API error ${res.status}`);

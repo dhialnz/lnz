@@ -42,6 +42,7 @@ import {
   subscribeAIPrewarm,
   writeLatestDashboardRecommendations,
 } from "@/lib/ai-session";
+import { sanitizePortfolioInsights } from "@/lib/ai-format";
 import { useCurrency } from "@/lib/currency";
 import { cn, fmt, fmtPct, signedClass } from "@/lib/utils";
 
@@ -572,7 +573,7 @@ export default function DashboardPage() {
     const syncCaches = () => {
       setLatestDashboardSummary(readLatestDashboardRecommendations());
       setLatestNewsSummary(readLatestNewsSummary());
-      setLatestAssistantSummary(readLatestAssistantInsights());
+      setLatestAssistantSummary(sanitizePortfolioInsights(readLatestAssistantInsights()));
       setAiPrewarmStarted(readAIPrewarmState().started);
     };
     syncCaches();
@@ -580,7 +581,7 @@ export default function DashboardPage() {
       setAiPrewarmStarted(state.started);
       setLatestDashboardSummary(readLatestDashboardRecommendations());
       setLatestNewsSummary(readLatestNewsSummary());
-      setLatestAssistantSummary(readLatestAssistantInsights());
+      setLatestAssistantSummary(sanitizePortfolioInsights(readLatestAssistantInsights()));
       if (!state.started) {
         setRecs([]);
         setRecSource("AI");
@@ -841,7 +842,7 @@ export default function DashboardPage() {
   const aiSummariesStarted = Boolean(aiEnabled && aiPrewarmStarted);
   const aiPipelineReady = Boolean(aiSummariesStarted && allAISummariesReady);
   const aiSummaryRecommendationSet = latestDashboardSummary?.recommendations ?? [];
-  const aiInsights = latestAssistantSummary;
+  const aiInsights = sanitizePortfolioInsights(latestAssistantSummary);
   const newsSummaryText = latestNewsSummary?.text ?? "";
   const holdingsByTicker = new Map(
     (holdingsSnapshot?.holdings ?? []).map((holding) => [holding.ticker.toUpperCase(), holding]),

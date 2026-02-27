@@ -7,6 +7,7 @@ import {
   getAIStatus,
   getPortfolioInsights,
 } from "@/lib/api";
+import { sanitizePortfolioInsights } from "@/lib/ai-format";
 import type { PortfolioInsights, Recommendation } from "@/lib/types";
 
 const AUTH_HINT_KEY = "lnz_ai_enabled_hint_v1";
@@ -19,6 +20,9 @@ const PREWARM_EVENT = "lnz:ai-prewarm-state";
 const DASHBOARD_LATEST_PREFIX = "lnz_weekly_ai_recs_latest_v1";
 const NEWS_LATEST_PREFIX = "lnz_news_ai_summary_latest_v1";
 const ASSISTANT_LATEST_PREFIX = "lnz_assistant_insights_latest_v1";
+const PIPELINE_MAX_ROUNDS = 6;
+const PIPELINE_STAGE_RETRIES = 3;
+const PIPELINE_RETRY_BASE_DELAY_MS = 1500;
 
 export interface AIPrewarmState {
   epoch: number;
@@ -57,13 +61,13 @@ function writeJson(key: string, value: unknown): void {
   }
 }
 
-function scopedKey(prefix: string): string {
-  return `${prefix}:e${getAIEpoch()}`;
+function scopedKey(prefix: string, epoch = getAIEpoch()): string {
+  return `${prefix}:e${epoch}`;
 }
 
-function defaultPrewarmState(): AIPrewarmState {
+function defaultPrewarmState(epoch = getAIEpoch()): AIPrewarmState {
   return {
-    epoch: getAIEpoch(),
+    epoch,
     started: false,
     completed: false,
     ai_enabled: null,
@@ -76,14 +80,16 @@ function defaultPrewarmState(): AIPrewarmState {
   };
 }
 
-function writePrewarmState(state: AIPrewarmState): void {
-  writeJson(scopedKey(PREWARM_STATE_PREFIX), state);
+function writePrewarmState(state: AIPrewarmState, epoch = state.epoch): void {
+  const normalized: AIPrewarmState = { ...state, epoch };
+  writeJson(scopedKey(PREWARM_STATE_PREFIX, epoch), normalized);
   if (!hasWindow()) return;
-  window.dispatchEvent(new CustomEvent(PREWARM_EVENT, { detail: state }));
+  if (getAIEpoch() !== epoch) return;
+  window.dispatchEvent(new CustomEvent(PREWARM_EVENT, { detail: normalized }));
 }
 
-export function readAIPrewarmState(): AIPrewarmState {
-  return readJson<AIPrewarmState>(scopedKey(PREWARM_STATE_PREFIX)) ?? defaultPrewarmState();
+export function readAIPrewarmState(epoch = getAIEpoch()): AIPrewarmState {
+  return readJson<AIPrewarmState>(scopedKey(PREWARM_STATE_PREFIX, epoch)) ?? defaultPrewarmState(epoch);
 }
 
 export function subscribeAIPrewarm(listener: (state: AIPrewarmState) => void): () => void {
@@ -150,33 +156,50 @@ export async function syncPuterAuthFromClient(): Promise<{ client: null; signedI
   }
 }
 
-export function readLatestDashboardRecommendations(): { recommendations: Recommendation[]; model: string } | null {
-  return readJson<{ recommendations: Recommendation[]; model: string }>(scopedKey(DASHBOARD_LATEST_PREFIX));
+export function readLatestDashboardRecommendations(
+  epoch = getAIEpoch(),
+): { recommendations: Recommendation[]; model: string } | null {
+  return readJson<{ recommendations: Recommendation[]; model: string }>(scopedKey(DASHBOARD_LATEST_PREFIX, epoch));
 }
 
-export function writeLatestDashboardRecommendations(recommendations: Recommendation[], model: string): void {
-  writeJson(scopedKey(DASHBOARD_LATEST_PREFIX), { recommendations, model });
+export function writeLatestDashboardRecommendations(
+  recommendations: Recommendation[],
+  model: string,
+  epoch = getAIEpoch(),
+): void {
+  writeJson(scopedKey(DASHBOARD_LATEST_PREFIX, epoch), { recommendations, model });
 }
 
-export function readLatestNewsSummary(): { text: string; model: string } | null {
-  return readJson<{ text: string; model: string }>(scopedKey(NEWS_LATEST_PREFIX));
+export function readLatestNewsSummary(epoch = getAIEpoch()): { text: string; model: string } | null {
+  return readJson<{ text: string; model: string }>(scopedKey(NEWS_LATEST_PREFIX, epoch));
 }
 
-export function writeLatestNewsSummary(text: string, model: string): void {
-  writeJson(scopedKey(NEWS_LATEST_PREFIX), { text, model });
+export function writeLatestNewsSummary(text: string, model: string, epoch = getAIEpoch()): void {
+  writeJson(scopedKey(NEWS_LATEST_PREFIX, epoch), { text, model });
 }
 
-export function readLatestAssistantInsights(): (PortfolioInsights & { model_used?: string }) | null {
-  return readJson<PortfolioInsights & { model_used?: string }>(scopedKey(ASSISTANT_LATEST_PREFIX));
+export function readLatestAssistantInsights(
+  epoch = getAIEpoch(),
+): (PortfolioInsights & { model_used?: string }) | null {
+  return sanitizePortfolioInsights(
+    readJson<PortfolioInsights & { model_used?: string }>(scopedKey(ASSISTANT_LATEST_PREFIX, epoch)),
+  );
 }
 
-export function writeLatestAssistantInsights(insights: PortfolioInsights, modelUsed?: string): void {
-  writeJson(scopedKey(ASSISTANT_LATEST_PREFIX), { ...insights, model_used: modelUsed ?? insights.model });
+export function writeLatestAssistantInsights(
+  insights: PortfolioInsights,
+  modelUsed?: string,
+  epoch = getAIEpoch(),
+): void {
+  const clean = sanitizePortfolioInsights({ ...insights, model_used: modelUsed ?? insights.model });
+  if (!clean) return;
+  writeJson(scopedKey(ASSISTANT_LATEST_PREFIX, epoch), clean);
 }
 
 export function clearAIPipelineState(): void {
   if (!hasWindow()) return;
   const nextEpoch = bumpAIEpoch();
+  prewarmRunId += 1;
   prewarmPromise = null;
 
   const cleared: AIPrewarmState = {
@@ -201,6 +224,7 @@ export function clearAIPipelineState(): void {
 }
 
 let prewarmPromise: Promise<void> | null = null;
+let prewarmRunId = 0;
 
 type RetryResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -241,9 +265,12 @@ async function withRetries<T>(
 export async function startGlobalAIPrewarm(force = false): Promise<void> {
   if (!hasWindow()) return;
   const epoch = getAIEpoch();
+  const runId = ++prewarmRunId;
   const doneKey = `${PREWARM_DONE_PREFIX}:e${epoch}`;
   if (!force && window.sessionStorage.getItem(doneKey) === "1") return;
-  if (!force && prewarmPromise) return prewarmPromise;
+  // Never allow overlapping prewarm runs; overlapping writes can leave the
+  // sidebar state stuck in partial/invalid transitions.
+  if (prewarmPromise) return prewarmPromise;
 
   prewarmPromise = (async () => {
     // Force each run to prove all summaries again; done flag is only set on 3/3.
@@ -265,9 +292,9 @@ export async function startGlobalAIPrewarm(force = false): Promise<void> {
 
     const patchState = (patch: Partial<AIPrewarmState>) => {
       writePrewarmState({
-        ...readAIPrewarmState(),
+        ...readAIPrewarmState(epoch),
         ...patch,
-      });
+      }, epoch);
     };
 
     const status = await getAIStatus().catch(() => null);
@@ -294,95 +321,95 @@ export async function startGlobalAIPrewarm(force = false): Promise<void> {
     let newsError = "";
     let assistantError = "";
 
-    const maxRounds = 3;
+    const maxRounds = PIPELINE_MAX_ROUNDS;
     for (let round = 1; round <= maxRounds; round += 1) {
-      const tasks: Array<Promise<void>> = [];
-
       if (!dashboardReady) {
-        tasks.push((async () => {
-          const dashboard = await withRetries(() => getAIDashboardRecommendations(), 1, 600);
-          if (dashboard.ok) {
-            writeLatestDashboardRecommendations(dashboard.value.recommendations, dashboard.value.model);
-            if (dashboard.value.used_ai) {
-              dashboardReady = true;
-              dashboardError = "";
-              return;
-            }
-            dashboardError = `returned non-AI output (${dashboard.value.model || "unknown model"})`;
+        const dashboard = await withRetries(
+          () => getAIDashboardRecommendations(),
+          PIPELINE_STAGE_RETRIES,
+          PIPELINE_RETRY_BASE_DELAY_MS,
+        );
+        if (dashboard.ok) {
+          writeLatestDashboardRecommendations(dashboard.value.recommendations, dashboard.value.model, epoch);
+          if (dashboard.value.used_ai) {
+            dashboardReady = true;
+            dashboardError = "";
           } else {
-            dashboardError = dashboard.error;
+            dashboardError = `returned non-AI output (${dashboard.value.model || "unknown model"})`;
           }
+        } else {
+          dashboardError = dashboard.error;
+        }
 
-          const dashboardCached = readLatestDashboardRecommendations();
-          dashboardReady = Boolean(
-            dashboardCached &&
-              Array.isArray(dashboardCached.recommendations) &&
-              dashboardCached.recommendations.length > 0 &&
-              dashboardCached.model !== "deterministic-v1" &&
-              dashboardCached.model !== "rules-fallback",
-          );
+        const dashboardCached = readLatestDashboardRecommendations(epoch);
+        dashboardReady = Boolean(
+          dashboardCached &&
+            Array.isArray(dashboardCached.recommendations) &&
+            dashboardCached.recommendations.length > 0 &&
+            dashboardCached.model !== "deterministic-v1" &&
+            dashboardCached.model !== "rules-fallback",
+        );
 
-          if (!dashboardReady) {
-            const rulesFallback = await withRetries(() => getRecommendations(), 1, 500);
-            if (rulesFallback.ok && Array.isArray(rulesFallback.value) && rulesFallback.value.length > 0) {
-              writeLatestDashboardRecommendations(rulesFallback.value, "rules-fallback");
-            } else if (!rulesFallback.ok) {
-              dashboardError = `${dashboardError}; fallback: ${rulesFallback.error}`;
-            }
+        if (!dashboardReady) {
+          const rulesFallback = await withRetries(() => getRecommendations(), 1, 600);
+          if (rulesFallback.ok && Array.isArray(rulesFallback.value) && rulesFallback.value.length > 0) {
+            writeLatestDashboardRecommendations(rulesFallback.value, "rules-fallback", epoch);
+          } else if (!rulesFallback.ok) {
+            dashboardError = `${dashboardError}; fallback: ${rulesFallback.error}`;
           }
-        })());
+        }
       }
 
       if (!newsReady) {
-        tasks.push((async () => {
-          const news = await withRetries(() => getAINewsSummary(), 1, 600);
-          if (news.ok) {
-            writeLatestNewsSummary(news.value.summary, news.value.model);
-            if (news.value.used_ai) {
-              newsReady = true;
-              newsError = "";
-              return;
-            }
-            newsError = `returned non-AI output (${news.value.model || "unknown model"})`;
+        const news = await withRetries(
+          () => getAINewsSummary(),
+          PIPELINE_STAGE_RETRIES,
+          PIPELINE_RETRY_BASE_DELAY_MS,
+        );
+        if (news.ok) {
+          writeLatestNewsSummary(news.value.summary, news.value.model, epoch);
+          if (news.value.used_ai) {
+            newsReady = true;
+            newsError = "";
           } else {
-            newsError = news.error;
+            newsError = `returned non-AI output (${news.value.model || "unknown model"})`;
           }
-          const newsCached = readLatestNewsSummary();
-          newsReady = Boolean(
-            newsCached &&
-              typeof newsCached.text === "string" &&
-              newsCached.text.trim().length > 0 &&
-              newsCached.model !== "deterministic-v1",
-          );
-        })());
+        } else {
+          newsError = news.error;
+        }
+        const newsCached = readLatestNewsSummary(epoch);
+        newsReady = Boolean(
+          newsCached &&
+            typeof newsCached.text === "string" &&
+            newsCached.text.trim().length > 0 &&
+            newsCached.model !== "deterministic-v1",
+        );
       }
 
       if (!assistantReady) {
-        tasks.push((async () => {
-          const assistant = await withRetries(() => getPortfolioInsights(), 1, 600);
-          if (assistant.ok) {
-            writeLatestAssistantInsights(assistant.value, assistant.value.model);
-            if (assistant.value.used_ai) {
-              assistantReady = true;
-              assistantError = "";
-              return;
-            }
-            assistantError = `returned non-AI output (${assistant.value.model || "unknown model"})`;
+        const assistant = await withRetries(
+          () => getPortfolioInsights(),
+          PIPELINE_STAGE_RETRIES,
+          PIPELINE_RETRY_BASE_DELAY_MS,
+        );
+        if (assistant.ok) {
+          writeLatestAssistantInsights(assistant.value, assistant.value.model, epoch);
+          if (assistant.value.used_ai) {
+            assistantReady = true;
+            assistantError = "";
           } else {
-            assistantError = assistant.error;
+            assistantError = `returned non-AI output (${assistant.value.model || "unknown model"})`;
           }
-          const assistantCached = readLatestAssistantInsights();
-          assistantReady = Boolean(
-            assistantCached &&
-              typeof assistantCached.summary === "string" &&
-              assistantCached.summary.trim().length > 0 &&
-              assistantCached.model !== "deterministic-v1",
-          );
-        })());
-      }
-
-      if (tasks.length > 0) {
-        await Promise.all(tasks);
+        } else {
+          assistantError = assistant.error;
+        }
+        const assistantCached = readLatestAssistantInsights(epoch);
+        assistantReady = Boolean(
+          assistantCached &&
+            typeof assistantCached.summary === "string" &&
+            assistantCached.summary.trim().length > 0 &&
+            assistantCached.model !== "deterministic-v1",
+        );
       }
 
       patchState({
@@ -396,7 +423,7 @@ export async function startGlobalAIPrewarm(force = false): Promise<void> {
       });
 
       if (dashboardReady && newsReady && assistantReady) break;
-      if (round < maxRounds) await sleep(600 * round);
+      if (round < maxRounds) await sleep(1000 * round);
     }
 
     const errors: string[] = [];
@@ -418,7 +445,9 @@ export async function startGlobalAIPrewarm(force = false): Promise<void> {
       window.sessionStorage.setItem(doneKey, "1");
     }
   })().finally(() => {
-    prewarmPromise = null;
+    if (prewarmRunId === runId) {
+      prewarmPromise = null;
+    }
   });
 
   return prewarmPromise;

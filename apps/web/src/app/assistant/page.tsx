@@ -15,6 +15,7 @@ import {
   subscribeAIPrewarm,
   writeLatestAssistantInsights,
 } from "@/lib/ai-session";
+import { sanitizePortfolioInsights } from "@/lib/ai-format";
 import { cn } from "@/lib/utils";
 import { LLMText } from "@/components/LLMText";
 
@@ -341,7 +342,7 @@ export default function AssistantPage() {
   const pipelineRecoveryAttemptedRef = useRef(false);
 
   const hydrateFromCache = useCallback(() => {
-    const latest = readLatestAssistantInsights();
+    const latest = sanitizePortfolioInsights(readLatestAssistantInsights());
     if (!latest) return false;
     setInsights((prev) => {
       if (
@@ -393,9 +394,10 @@ export default function AssistantPage() {
 
       setGenerating(true);
       const next = await getPortfolioInsights();
-      setInsights(next);
-      setActiveModel(next.model);
-      writeLatestAssistantInsights(next, next.model);
+      const cleanNext = sanitizePortfolioInsights(next) ?? next;
+      setInsights(cleanNext);
+      setActiveModel(cleanNext.model);
+      writeLatestAssistantInsights(cleanNext, cleanNext.model);
       setPipelineWaiting("");
       pipelineRecoveryAttemptedRef.current = false;
     } catch (e: unknown) {

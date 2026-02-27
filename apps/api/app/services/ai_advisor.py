@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import ast
 import json
 import logging
 import re
@@ -167,10 +169,10 @@ def _resolve_provider_model(task: str | None = None) -> tuple[str, str]:
 def _llm_timeout_for_task(task: str | None) -> float:
     task_key = (task or "").strip().lower()
     if task_key in {"insights", "dashboard"}:
-        return 45.0
+        return 65.0
     if task_key == "chat":
-        return 40.0
-    return 35.0
+        return 55.0
+    return 45.0
 
 
 def _llm_max_tokens_for_task(task: str | None) -> int:
@@ -1408,6 +1410,12 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
             return parsed
     except Exception:
         pass
+    try:
+        parsed = ast.literal_eval(raw)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
 
     # Fallback: parse from first '{' to last '}'.
     start = raw.find("{")
@@ -1418,8 +1426,182 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
             if isinstance(parsed, dict):
                 return parsed
         except Exception:
-            return None
+            try:
+                parsed = ast.literal_eval(raw[start : end + 1])
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                return None
     return None
+
+
+def _extract_leading_object_blob(text: str) -> tuple[str | None, str]:
+    raw = (text or "").lstrip()
+    open_index = raw.find("{")
+    if open_index < 0:
+        return None, raw
+    prefix = raw[:open_index]
+    if re.search(r"[A-Za-z0-9]", prefix):
+        return None, raw
+    raw_obj = raw[open_index:]
+
+    depth = 0
+    quote: str | None = None
+    escaped = False
+    for idx, ch in enumerate(raw_obj):
+        if quote is not None:
+            if escaped:
+                escaped = False
+                continue
+            if ch == "\\":
+                escaped = True
+                continue
+            if ch == quote:
+                quote = None
+            continue
+
+        if ch in {"'", '"'}:
+            quote = ch
+            continue
+
+        if ch == "{":
+            depth += 1
+            continue
+        if ch == "}":
+            depth -= 1
+            if depth == 0:
+                return raw_obj[: idx + 1], raw_obj[idx + 1 :]
+
+    return None, raw
+
+
+def _parse_loose_mapping(text: str | None) -> dict[str, Any] | None:
+    if not text:
+        return None
+    raw = text.strip()
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+    try:
+        parsed = ast.literal_eval(raw)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        return None
+    return None
+
+
+def _first_text_value(mapping: dict[str, Any], keys: tuple[str, ...]) -> str | None:
+    for key in keys:
+        value = mapping.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return None
+
+
+def _normalize_structured_entry(entry: Any, primary_keys: tuple[str, ...]) -> str | None:
+    if isinstance(entry, dict):
+        mapping = entry
+    else:
+        raw = str(entry or "").strip()
+        if not raw:
+            return None
+        object_blob, trailing = _extract_leading_object_blob(raw)
+        mapping = _parse_loose_mapping(raw)
+        if mapping is None and object_blob:
+            mapping = _parse_loose_mapping(object_blob)
+        if mapping is None:
+            return raw
+        entry = {
+            **mapping,
+            "__trailing__": trailing.strip(),
+        }
+        mapping = entry
+
+    primary = _first_text_value(
+        mapping,
+        primary_keys + ("title", "headline", "signal", "theme", "ticker"),
+    )
+    secondary = _first_text_value(
+        mapping,
+        ("impact", "reason", "rationale", "detail", "thesis", "why"),
+    )
+
+    line = primary or secondary
+    if primary and secondary and secondary.lower() != primary.lower():
+        line = f"{primary}: {secondary}"
+
+    trailing = str(mapping.get("__trailing__") or "").strip(" \t\r\n-:;,.")
+    if trailing:
+        if line:
+            if trailing.lower() not in line.lower():
+                line = f"{line} {trailing}"
+        else:
+            line = trailing
+
+    return str(line or "").strip() or None
+
+
+def _normalize_structured_lines(values: Any, primary_keys: tuple[str, ...]) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        raw_lines = [item]
+        if isinstance(item, str):
+            raw_lines = [part for part in re.split(r"[\r\n]+", item) if part.strip()]
+        for part in raw_lines:
+            line = _normalize_structured_entry(part, primary_keys)
+            if not line:
+                continue
+            if re.match(r"^key\s+(risks?|opportunities?)\b", line, flags=re.IGNORECASE):
+                continue
+            compact = re.sub(r"\s+", " ", line).strip()
+            if not compact:
+                continue
+            key = compact.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(compact)
+    return out
+
+
+def _normalize_summary_text(value: Any, fallback: str) -> str:
+    raw = str(value or fallback or "").strip()
+    if not raw:
+        return fallback
+
+    object_blob, trailing = _extract_leading_object_blob(raw)
+    if object_blob and trailing.strip():
+        raw = trailing.strip()
+
+    # Summary should stay summary-only; strip AI-added sections that are rendered
+    # separately in the UI.
+    lowered = raw.lower()
+    cut_points = [pos for pos in (lowered.find("key risks"), lowered.find("key opportunities")) if pos >= 0]
+    if cut_points:
+        raw = raw[: min(cut_points)].strip()
+
+    mapped = _parse_loose_mapping(raw)
+    if isinstance(mapped, dict):
+        normalized = _normalize_structured_entry(
+            mapped,
+            ("summary", "insight", "overview", "message"),
+        )
+        if normalized:
+            return normalized
+
+    return re.sub(r"\s+", " ", raw).strip()
 
 
 async def _llm_chat(
@@ -1459,22 +1641,46 @@ async def _llm_chat(
         payload["response_format"] = {"type": "json_object"}
 
     try:
-        async with httpx.AsyncClient(timeout=_llm_timeout_for_task(task)) as client:
-            res = await client.post(url, headers=headers, json=payload)
-            res.raise_for_status()
-            data = res.json()
-            text = _extract_text_content(data)
-            logger.debug("LLM call succeeded: provider=%s model=%s task=%s", provider, model, task)
-            return text, provider, model
-    except httpx.TimeoutException:
-        logger.warning("LLM call timed out: provider=%s model=%s task=%s", provider, model, task)
-        return None, provider, model
-    except httpx.HTTPStatusError as exc:
-        logger.warning(
-            "LLM HTTP error: provider=%s model=%s task=%s status=%d",
-            provider, model, task, exc.response.status_code,
-        )
-        return None, provider, model
+        max_attempts = 2
+        for attempt in range(1, max_attempts + 1):
+            try:
+                async with httpx.AsyncClient(timeout=_llm_timeout_for_task(task)) as client:
+                    res = await client.post(url, headers=headers, json=payload)
+                    res.raise_for_status()
+                    data = res.json()
+                    text = _extract_text_content(data)
+                    logger.debug("LLM call succeeded: provider=%s model=%s task=%s", provider, model, task)
+                    return text, provider, model
+            except httpx.TimeoutException:
+                logger.warning(
+                    "LLM call timed out: provider=%s model=%s task=%s attempt=%d/%d",
+                    provider, model, task, attempt, max_attempts,
+                )
+                if attempt < max_attempts:
+                    await asyncio.sleep(1.2 * attempt)
+                    continue
+                return None, provider, model
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code
+                logger.warning(
+                    "LLM HTTP error: provider=%s model=%s task=%s status=%d attempt=%d/%d",
+                    provider, model, task, status, attempt, max_attempts,
+                )
+                if attempt < max_attempts and status in {408, 409, 429, 500, 502, 503, 504}:
+                    retry_after = exc.response.headers.get("Retry-After")
+                    try:
+                        delay = max(1.0, float(retry_after or "0"))
+                    except ValueError:
+                        delay = 1.2 * attempt
+                    await asyncio.sleep(delay)
+                    continue
+                return None, provider, model
+            except Exception as exc:
+                logger.error("LLM call failed unexpectedly: provider=%s task=%s error=%s", provider, task, exc)
+                if attempt < max_attempts:
+                    await asyncio.sleep(0.8 * attempt)
+                    continue
+                return None, provider, model
     except Exception as exc:
         logger.error("LLM call failed unexpectedly: provider=%s task=%s error=%s", provider, task, exc)
         return None, provider, model
@@ -1660,17 +1866,31 @@ async def generate_portfolio_insights(context: dict[str, Any]) -> dict[str, Any]
             suggestions or baseline["suggestions"],
             parsed_watchlist,
         )
-        parsed_summary = str(parsed.get("summary") or baseline["summary"]).strip()
+        parsed_summary = _normalize_summary_text(parsed.get("summary"), str(baseline["summary"]))
         if change_lens and change_lens not in parsed_summary:
             parsed_summary = f"{parsed_summary} {change_lens}".strip()
+        parsed_key_risks = _normalize_structured_lines(
+            parsed.get("key_risks"),
+            ("risk", "issue", "threat"),
+        ) or _normalize_structured_lines(
+            baseline.get("key_risks"),
+            ("risk", "issue", "threat"),
+        )
+        parsed_key_opportunities = _normalize_structured_lines(
+            parsed.get("key_opportunities"),
+            ("opportunity", "idea", "tailwind"),
+        ) or _normalize_structured_lines(
+            baseline.get("key_opportunities"),
+            ("opportunity", "idea", "tailwind"),
+        )
 
         return {
             "generated_at": _utc_now(),
             "used_ai": True,
             "model": used_model,
             "summary": parsed_summary,
-            "key_risks": [str(x) for x in (parsed.get("key_risks") or baseline["key_risks"])][:6],
-            "key_opportunities": [str(x) for x in (parsed.get("key_opportunities") or baseline["key_opportunities"])][:6],
+            "key_risks": parsed_key_risks[:6],
+            "key_opportunities": parsed_key_opportunities[:6],
             "suggestions": clean_suggestions or baseline["suggestions"],
             "watchlist": clean_watchlist or baseline["watchlist"],
             "sources": baseline["sources"],

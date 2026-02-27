@@ -292,7 +292,8 @@ export default function NewsPage() {
   const [minImportance, setMinImportance] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  const [aiEnabled, setAiEnabled] = useState(() => readPuterAuthHint());
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const [aiStatusReady, setAiStatusReady] = useState(false);
   const [aiSummary, setAiSummary] = useState("");
   const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
   const [aiSummaryError, setAiSummaryError] = useState<string | null>(null);
@@ -303,10 +304,15 @@ export default function NewsPage() {
   const [articleSummaryCache, setArticleSummaryCache] = useState<Record<string, ArticleSummaryCache>>({});
 
   const refreshAIStatus = useCallback(async () => {
-    const status = await getAIStatus().catch(() => null);
-    const enabled = Boolean(status?.ai_enabled);
-    setAiEnabled(enabled);
-    if (enabled) void startGlobalAIPrewarm();
+    setAiEnabled(readPuterAuthHint());
+    try {
+      const status = await getAIStatus().catch(() => null);
+      const enabled = Boolean(status?.ai_enabled);
+      setAiEnabled(enabled);
+      if (enabled) void startGlobalAIPrewarm();
+    } finally {
+      setAiStatusReady(true);
+    }
   }, []);
 
   const load = useCallback(
@@ -910,7 +916,9 @@ export default function NewsPage() {
             {aiSummaryLoading ? "Generating…" : "Regenerate"}
           </button>
         </div>
-        {!aiEnabled ? (
+        {!aiStatusReady ? (
+          <p className="text-xs text-muted">Checking AI status...</p>
+        ) : !aiEnabled ? (
           <p className="text-xs text-muted">AI API is disabled. Add your API key on backend and restart.</p>
         ) : aiSummaryLoading ? (
           <ThinkingIndicator label="Generating portfolio news brief…" />
@@ -940,7 +948,9 @@ export default function NewsPage() {
             </span>
           )}
         </div>
-        {!aiEnabled ? (
+        {!aiStatusReady ? (
+          <p className="text-xs text-muted">Checking AI status...</p>
+        ) : !aiEnabled ? (
           <p className="text-xs text-muted">AI API is disabled. Add your API key on backend and restart.</p>
         ) : !activeArticle ? (
           <p className="text-xs text-muted">Click &ldquo;AI Brief&rdquo; on any news card to generate an article-level brief.</p>
