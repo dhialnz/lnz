@@ -265,12 +265,17 @@ async function withRetries<T>(
 export async function startGlobalAIPrewarm(force = false): Promise<void> {
   if (!hasWindow()) return;
   const epoch = getAIEpoch();
-  const runId = ++prewarmRunId;
   const doneKey = `${PREWARM_DONE_PREFIX}:e${epoch}`;
   if (!force && window.sessionStorage.getItem(doneKey) === "1") return;
   // Never allow overlapping prewarm runs; overlapping writes can leave the
   // sidebar state stuck in partial/invalid transitions.
   if (prewarmPromise) return prewarmPromise;
+  // Only increment runId when we are actually starting a new run.
+  // Incrementing on every call (including ones that return early via the
+  // prewarmPromise guard above) causes the finally-block check to always
+  // fail, leaving prewarmPromise permanently pointing at a stale resolved
+  // promise and silently blocking all future pipeline starts.
+  const runId = ++prewarmRunId;
 
   prewarmPromise = (async () => {
     // Force each run to prove all summaries again; done flag is only set on 3/3.
