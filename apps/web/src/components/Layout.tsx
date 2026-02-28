@@ -40,6 +40,11 @@ const NAV_ITEMS: Array<{ href: string; label: string; icon: IconName }> = [
   { href: "/settings", label: "Settings", icon: "settings" },
 ];
 
+const DEFAULT_CLERK_SIGN_IN_URL =
+  "https://elegant-moose-18.accounts.dev/sign-in?redirect_url=https%3A%2F%2Fapp.alphenzi.com%2F";
+const CLERK_SIGN_IN_URL =
+  process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL ?? DEFAULT_CLERK_SIGN_IN_URL;
+
 function IconGlyph({ name, active }: { name: IconName; active: boolean }) {
   const stroke = active ? "#FF5C00" : "#6B6B70";
 
@@ -117,7 +122,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         if (!cancelled) {
           setAuthMe(null);
           if (isAuthFailure && window.location.pathname !== "/sign-in") {
-            window.location.assign("/sign-in");
+            window.location.assign(CLERK_SIGN_IN_URL);
           }
         }
       }
@@ -176,15 +181,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
       setAuthMe(null);
 
       const signOutResult = await Promise.race<string>([
-        signOut({ redirectUrl: "/sign-in" }).then(() => "done"),
+        signOut({ redirectUrl: CLERK_SIGN_IN_URL }).then(() => "done"),
         new Promise<string>((resolve) => window.setTimeout(() => resolve("timeout"), 5000)),
       ]);
 
       if (signOutResult === "timeout") {
-        window.location.assign("/sign-in");
+        window.location.assign(CLERK_SIGN_IN_URL);
       }
     } catch {
-      window.location.assign("/sign-in");
+      window.location.assign(CLERK_SIGN_IN_URL);
     } finally {
       setLogoutBusy(false);
     }
@@ -368,7 +373,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <div className="border-t border-border pt-3">
               <div className="flex items-center gap-2">
                 <UserButton
-                  afterSignOutUrl="/sign-in"
+                  afterSignOutUrl={CLERK_SIGN_IN_URL}
                   appearance={{
                     elements: {
                       avatarBox: "h-8 w-8",

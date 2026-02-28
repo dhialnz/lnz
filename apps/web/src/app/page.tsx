@@ -108,6 +108,10 @@ const NEGATIVE_NEWS_WORDS = [
   "pressure",
   "volatility",
 ];
+const DEFAULT_CLERK_SIGN_IN_URL =
+  "https://elegant-moose-18.accounts.dev/sign-in?redirect_url=https%3A%2F%2Fapp.alphenzi.com%2F";
+const CLERK_SIGN_IN_URL =
+  process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL ?? DEFAULT_CLERK_SIGN_IN_URL;
 
 type RecommendationSource = "Rules" | "AI";
 type DashboardChartId = "value" | "drawdown" | "alpha" | "volatility";
@@ -741,7 +745,7 @@ export default function DashboardPage() {
       if (requestId !== loadRequestRef.current) return;
       const message = err instanceof Error ? err.message : "Failed to load dashboard";
       if (/missing authorization header|invalid token|missing authorization|user not registered/i.test(message)) {
-        window.location.assign("/sign-in");
+        window.location.assign(CLERK_SIGN_IN_URL);
         return;
       }
       setError(message);
