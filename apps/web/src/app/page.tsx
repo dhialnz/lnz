@@ -658,17 +658,38 @@ export default function DashboardPage() {
     setAiStatusReady(false);
 
     const pause = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+    const withTimeout = <T,>(promise: Promise<T>, ms: number, message: string): Promise<T> =>
+      new Promise<T>((resolve, reject) => {
+        const timeoutId = window.setTimeout(() => reject(new Error(message)), ms);
+        promise
+          .then((value) => {
+            window.clearTimeout(timeoutId);
+            resolve(value);
+          })
+          .catch((err) => {
+            window.clearTimeout(timeoutId);
+            reject(err);
+          });
+      });
     const fetchCore = async () =>
       Promise.all([getSummary(), getSeries(), getRecommendations(), getRulebook()]);
 
     try {
       let core: Awaited<ReturnType<typeof fetchCore>>;
       try {
-        core = await fetchCore();
+        core = await withTimeout(
+          fetchCore(),
+          25_000,
+          "Timed out while loading dashboard data. Please refresh and try again.",
+        );
       } catch {
         // One immediate retry resolves transient startup/cold-path failures after refresh.
         await pause(450);
-        core = await fetchCore();
+        core = await withTimeout(
+          fetchCore(),
+          25_000,
+          "Timed out while loading dashboard data. Please refresh and try again.",
+        );
       }
 
       if (requestId !== loadRequestRef.current) return;

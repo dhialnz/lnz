@@ -34,12 +34,40 @@ const BASE_URL = "/api/v1";
 // should complete much faster.
 const DEFAULT_TIMEOUT_MS = 45_000;
 const AI_TIMEOUT_MS = 90_000;
+const TOKEN_GETTER_WAIT_MS = 1_500;
+const TOKEN_RESOLVE_TIMEOUT_MS = 5_000;
 
 // Clerk token getter — injected by ClerkApiSync on mount so this plain module
 // can attach Authorization headers without importing React/Clerk hooks.
 let _getToken: (() => Promise<string | null>) | null = null;
 export function setApiTokenGetter(fn: () => Promise<string | null>): void {
   _getToken = fn;
+}
+
+async function waitForTokenGetter(timeoutMs = TOKEN_GETTER_WAIT_MS): Promise<(() => Promise<string | null>) | null> {
+  const started = Date.now();
+  while (!_getToken && Date.now() - started < timeoutMs) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return _getToken;
+}
+
+async function resolveAccessToken(path: string): Promise<string | null> {
+  const getter = _getToken ?? (await waitForTokenGetter());
+  if (!getter) return null;
+  try {
+    const token = await Promise.race<string | null>([
+      getter(),
+      new Promise<string | null>((resolve) => {
+        setTimeout(() => resolve(null), TOKEN_RESOLVE_TIMEOUT_MS);
+      }),
+    ]);
+    return token ?? null;
+  } catch {
+    // Non-fatal: let backend return 401 if token resolution fails.
+    console.warn(`[api] token resolution failed for ${path}`);
+    return null;
+  }
 }
 
 const AI_PATHS = ["/ai/chat", "/ai/portfolio-insights", "/ai/dashboard-recommendations", "/ai/news-summary"];
@@ -58,7 +86,7 @@ async function request<T>(
   const timer = setTimeout(() => controller.abort(), getTimeoutMs(path));
 
   try {
-    const token = _getToken ? await _getToken() : null;
+    const token = await resolveAccessToken(path);
     const authHeader: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
     const res = await fetch(`${BASE_URL}${path}`, {
       cache: method === "GET" ? "no-store" : init?.cache,
@@ -102,7 +130,7 @@ export async function getSeries(): Promise<PortfolioSeriesRow[]> {
 export async function previewExcel(file: File): Promise<ParsePreview> {
   const form = new FormData();
   form.append("file", file);
-  const token = _getToken ? await _getToken() : null;
+  const token = await resolveAccessToken("/portfolio/preview-excel");
   const authHeader: Record<string, string> = token
     ? { Authorization: `Bearer ${token}` }
     : {};
@@ -125,7 +153,7 @@ export async function importExcel(
   const form = new FormData();
   form.append("file", file);
   form.append("dayfirst", String(dayfirst));
-  const token = _getToken ? await _getToken() : null;
+  const token = await resolveAccessToken("/portfolio/import-excel");
   const authHeader: Record<string, string> = token
     ? { Authorization: `Bearer ${token}` }
     : {};
