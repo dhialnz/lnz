@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
 import logging
+import time
 import uuid
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -32,6 +36,59 @@ class SetTierIn(BaseModel):
     tier: str
 
 
+def _verify_svix_signature(
+    *,
+    body: bytes,
+    secret: str,
+    svix_id: str | None,
+    svix_timestamp: str | None,
+    svix_signature: str | None,
+) -> None:
+    if not svix_id or not svix_timestamp or not svix_signature:
+        raise HTTPException(status_code=400, detail="Missing Svix signature headers.")
+
+    try:
+        timestamp = int(svix_timestamp)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid Svix timestamp.") from exc
+
+    # Basic replay protection (5 minutes).
+    if abs(int(time.time()) - timestamp) > 300:
+        raise HTTPException(status_code=400, detail="Svix timestamp outside tolerance.")
+
+    # Clerk webhook secrets are formatted as "whsec_<base64>".
+    secret_part = secret.split("_", 1)[1] if secret.startswith("whsec_") else secret
+    try:
+        key = base64.b64decode(secret_part)
+    except Exception:
+        # Fallback: use raw bytes if secret is not base64-encoded.
+        key = secret_part.encode("utf-8")
+
+    signed_payload = f"{svix_id}.{svix_timestamp}.{body.decode('utf-8')}".encode("utf-8")
+    expected = base64.b64encode(
+        hmac.new(key, signed_payload, hashlib.sha256).digest()
+    ).decode("utf-8")
+
+    signatures: list[str] = []
+    # Common format: "v1,signature v1,signature2"
+    for token in svix_signature.split():
+        parts = token.split(",", 1)
+        if len(parts) == 2 and parts[0] == "v1":
+            signatures.append(parts[1])
+    # Alternate format: "v1,signature,v1,signature2"
+    if not signatures:
+        parts = svix_signature.split(",")
+        for i in range(0, len(parts) - 1, 2):
+            if parts[i].strip() == "v1":
+                signatures.append(parts[i + 1].strip())
+
+    if not signatures:
+        raise HTTPException(status_code=400, detail="No Svix v1 signatures provided.")
+
+    if not any(hmac.compare_digest(sig, expected) for sig in signatures):
+        raise HTTPException(status_code=400, detail="Invalid webhook signature.")
+
+
 @router.get("/me")
 def get_me(user: User = Depends(get_current_user)) -> dict:
     return {
@@ -56,15 +113,13 @@ async def clerk_webhook(
     # Verify Svix webhook signature when secret is configured.
     if settings.CLERK_WEBHOOK_SECRET:
         try:
-            from svix.webhooks import Webhook  # type: ignore[import]
-
-            wh = Webhook(settings.CLERK_WEBHOOK_SECRET)
-            headers = {
-                "svix-id": svix_id or "",
-                "svix-timestamp": svix_timestamp or "",
-                "svix-signature": svix_signature or "",
-            }
-            wh.verify(body, headers)
+            _verify_svix_signature(
+                body=body,
+                secret=settings.CLERK_WEBHOOK_SECRET,
+                svix_id=svix_id,
+                svix_timestamp=svix_timestamp,
+                svix_signature=svix_signature,
+            )
         except Exception as exc:
             logger.warning("Webhook signature verification failed: %s", exc)
             raise HTTPException(status_code=400, detail="Invalid webhook signature.")
