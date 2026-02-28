@@ -112,6 +112,8 @@ const DEFAULT_CLERK_SIGN_IN_URL =
   "https://elegant-moose-18.accounts.dev/sign-in?redirect_url=https%3A%2F%2Fapp.alphenzi.com%2F";
 const CLERK_SIGN_IN_URL =
   process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL ?? DEFAULT_CLERK_SIGN_IN_URL;
+const AUTH_FAILURE_PATTERN =
+  /(missing authorization header|invalid token|missing authorization|user not registered|unauthorized|forbidden|api error 401|api error 403|\b401\b|\b403\b)/i;
 
 type RecommendationSource = "Rules" | "AI";
 type DashboardChartId = "value" | "drawdown" | "alpha" | "volatility";
@@ -744,7 +746,7 @@ export default function DashboardPage() {
     } catch (err) {
       if (requestId !== loadRequestRef.current) return;
       const message = err instanceof Error ? err.message : "Failed to load dashboard";
-      if (/missing authorization header|invalid token|missing authorization|user not registered/i.test(message)) {
+      if (AUTH_FAILURE_PATTERN.test(message)) {
         window.location.assign(CLERK_SIGN_IN_URL);
         return;
       }

@@ -44,6 +44,8 @@ const DEFAULT_CLERK_SIGN_IN_URL =
   "https://elegant-moose-18.accounts.dev/sign-in?redirect_url=https%3A%2F%2Fapp.alphenzi.com%2F";
 const CLERK_SIGN_IN_URL =
   process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL ?? DEFAULT_CLERK_SIGN_IN_URL;
+const AUTH_FAILURE_PATTERN =
+  /(missing authorization header|invalid token|missing authorization|user not registered|unauthorized|forbidden|api error 401|api error 403|\b401\b|\b403\b)/i;
 
 function IconGlyph({ name, active }: { name: IconName; active: boolean }) {
   const stroke = active ? "#FF5C00" : "#6B6B70";
@@ -109,8 +111,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : "";
-        const isAuthFailure =
-          /missing authorization header|invalid token|missing authorization|user not registered/i.test(message);
+        const isAuthFailure = AUTH_FAILURE_PATTERN.test(message);
 
         if (!cancelled && attempt < 2) {
           window.setTimeout(() => {
