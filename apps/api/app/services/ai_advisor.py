@@ -19,7 +19,7 @@ logger = logging.getLogger("lnz.ai_advisor")
 from app.models.market import NewsEvent
 from app.models.portfolio import PortfolioSeries
 from app.models.rulebook import Rulebook
-from app.routers.holdings import get_holdings
+from app.routers.holdings import get_holdings_for_user
 from app.services import metrics, regime, yahoo_quotes
 from app.services.news_impact import (
     aggregate_top_impacted,
@@ -1059,15 +1059,20 @@ async def _validate_and_enrich_recommendations_with_yahoo(
     return enriched[:10]
 
 
-async def build_ai_context(db: Session) -> dict[str, Any]:
-    holdings_snapshot = await get_holdings(db=db)
+async def build_ai_context(db: Session, user_id: uuid.UUID) -> dict[str, Any]:
+    holdings_snapshot = await get_holdings_for_user(db=db, user_id=user_id)
     holdings = holdings_snapshot.holdings
 
-    series_rows = db.query(PortfolioSeries).order_by(PortfolioSeries.date).all()
+    series_rows = (
+        db.query(PortfolioSeries)
+        .filter(PortfolioSeries.user_id == user_id)
+        .order_by(PortfolioSeries.date)
+        .all()
+    )
     summary = _build_portfolio_summary(series_rows)
     series_tail = _series_tail(series_rows)
 
-    rulebook = db.query(Rulebook).first()
+    rulebook = db.query(Rulebook).filter(Rulebook.user_id == user_id).first()
     thresholds = dict((rulebook.thresholds if rulebook else {}) or {})
     risk_profile = _risk_profile_from_thresholds(thresholds)
 

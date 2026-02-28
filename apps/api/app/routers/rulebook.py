@@ -5,20 +5,26 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.rulebook import Rulebook, DEFAULT_THRESHOLDS, DEFAULT_RULE_TEXT
+from app.models.user import User
 from app.schemas.rulebook import (
     RiskQuizIn,
     RiskQuizRecommendationOut,
     RulebookOut,
     RulebookUpdate,
 )
+from app.services.auth_service import get_current_user
 
 router = APIRouter(prefix="/rulebook", tags=["rulebook"])
 
 
-def _get_or_create(db: Session) -> Rulebook:
-    rb = db.query(Rulebook).first()
+def _get_or_create(db: Session, user_id) -> Rulebook:
+    rb = db.query(Rulebook).filter(Rulebook.user_id == user_id).first()
     if rb is None:
-        rb = Rulebook(thresholds=DEFAULT_THRESHOLDS.copy(), text=DEFAULT_RULE_TEXT)
+        rb = Rulebook(
+            user_id=user_id,
+            thresholds=DEFAULT_THRESHOLDS.copy(),
+            text=DEFAULT_RULE_TEXT,
+        )
         db.add(rb)
         db.commit()
         db.refresh(rb)
@@ -93,13 +99,20 @@ def _thresholds_for_profile(profile: str) -> dict:
 
 
 @router.get("", response_model=RulebookOut)
-def get_rulebook(db: Session = Depends(get_db)):
-    return _get_or_create(db)
+def get_rulebook(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return _get_or_create(db, user.id)
 
 
 @router.put("", response_model=RulebookOut)
-def update_rulebook(payload: RulebookUpdate, db: Session = Depends(get_db)):
-    rb = _get_or_create(db)
+def update_rulebook(
+    payload: RulebookUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    rb = _get_or_create(db, user.id)
     if payload.thresholds is not None:
         if payload.replace_thresholds:
             rb.thresholds = payload.thresholds

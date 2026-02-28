@@ -4,6 +4,7 @@
   AIDashboardRecommendations,
   AINewsSummary,
   AIStatus,
+  AuthMe,
   FearGreedData,
   PortfolioInsights,
   ImportResult,
@@ -34,6 +35,13 @@ const BASE_URL = "/api/v1";
 const DEFAULT_TIMEOUT_MS = 45_000;
 const AI_TIMEOUT_MS = 90_000;
 
+// Clerk token getter — injected by ClerkApiSync on mount so this plain module
+// can attach Authorization headers without importing React/Clerk hooks.
+let _getToken: (() => Promise<string | null>) | null = null;
+export function setApiTokenGetter(fn: () => Promise<string | null>): void {
+  _getToken = fn;
+}
+
 const AI_PATHS = ["/ai/chat", "/ai/portfolio-insights", "/ai/dashboard-recommendations", "/ai/news-summary"];
 
 function getTimeoutMs(path: string): number {
@@ -50,10 +58,12 @@ async function request<T>(
   const timer = setTimeout(() => controller.abort(), getTimeoutMs(path));
 
   try {
+    const token = _getToken ? await _getToken() : null;
+    const authHeader: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
     const res = await fetch(`${BASE_URL}${path}`, {
       cache: method === "GET" ? "no-store" : init?.cache,
       ...init,
-      headers: { "Content-Type": "application/json", ...init?.headers },
+      headers: { "Content-Type": "application/json", ...authHeader, ...init?.headers },
       signal: controller.signal,
     });
     clearTimeout(timer);
@@ -92,9 +102,14 @@ export async function getSeries(): Promise<PortfolioSeriesRow[]> {
 export async function previewExcel(file: File): Promise<ParsePreview> {
   const form = new FormData();
   form.append("file", file);
+  const token = _getToken ? await _getToken() : null;
+  const authHeader: Record<string, string> = token
+    ? { Authorization: `Bearer ${token}` }
+    : {};
   const res = await fetch(`${BASE_URL}/portfolio/preview-excel`, {
     method: "POST",
     body: form,
+    headers: authHeader,
   });
   if (!res.ok) {
     const detail = await res.json().catch(() => ({ detail: res.statusText }));
@@ -110,9 +125,14 @@ export async function importExcel(
   const form = new FormData();
   form.append("file", file);
   form.append("dayfirst", String(dayfirst));
+  const token = _getToken ? await _getToken() : null;
+  const authHeader: Record<string, string> = token
+    ? { Authorization: `Bearer ${token}` }
+    : {};
   const res = await fetch(`${BASE_URL}/portfolio/import-excel`, {
     method: "POST",
     body: form,
+    headers: authHeader,
   });
   if (!res.ok) {
     const detail = await res.json().catch(() => ({ detail: res.statusText }));
@@ -244,6 +264,10 @@ export async function getTickerSuggestions(
 
 export async function getAIStatus(): Promise<AIStatus> {
   return request<AIStatus>("/ai/status");
+}
+
+export async function getAuthMe(): Promise<AuthMe> {
+  return request<AuthMe>("/auth/me");
 }
 
 export async function getPortfolioInsights(): Promise<PortfolioInsights> {

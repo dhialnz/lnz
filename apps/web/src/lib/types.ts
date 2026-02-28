@@ -330,6 +330,14 @@ export interface AIStatus {
   model: string;
 }
 
+export interface AuthMe {
+  clerk_id: string;
+  email: string | null;
+  display_name: string | null;
+  tier: "observer" | "analyst" | "command";
+  is_admin: boolean;
+}
+
 export interface AIChatMessage {
   role: "user" | "assistant";
   content: string;

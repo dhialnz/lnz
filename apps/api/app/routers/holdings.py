@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.holdings import Holding
+from app.models.user import User
 from app.schemas.holdings import (
     HoldingIn,
     HoldingLive,
@@ -21,6 +22,7 @@ from app.schemas.holdings import (
     TickerSuggestion,
 )
 from app.services import yahoo_quotes
+from app.services.auth_service import get_current_user
 
 router = APIRouter(prefix="/holdings", tags=["holdings"])
 logger = logging.getLogger("lnz.holdings")
@@ -170,9 +172,9 @@ def _compute_sharpe_sortino(
     )
 
 
-@router.get("", response_model=HoldingsSnapshot)
-async def get_holdings(db: Session = Depends(get_db)) -> HoldingsSnapshot:
-    rows = db.query(Holding).order_by(Holding.added_at).all()
+async def get_holdings_for_user(db: Session, user_id: uuid.UUID) -> HoldingsSnapshot:
+    """Core holdings logic — callable directly from ai_advisor without FastAPI DI."""
+    rows = db.query(Holding).filter(Holding.user_id == user_id).order_by(Holding.added_at).all()
 
     if not rows:
         return HoldingsSnapshot(
@@ -406,6 +408,14 @@ async def get_holdings(db: Session = Depends(get_db)) -> HoldingsSnapshot:
     )
 
 
+@router.get("", response_model=HoldingsSnapshot)
+async def get_holdings(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> HoldingsSnapshot:
+    return await get_holdings_for_user(db, user.id)
+
+
 @router.get("/ticker-suggestions", response_model=list[TickerSuggestion])
 async def ticker_suggestions(q: str, limit: int = 8) -> list[TickerSuggestion]:
     query = (q or "").strip()
@@ -438,7 +448,11 @@ def _validate_ticker(ticker: str) -> str:
 
 
 @router.post("", response_model=HoldingOut, status_code=201)
-async def add_holding(payload: HoldingIn, db: Session = Depends(get_db)) -> HoldingOut:
+async def add_holding(
+    payload: HoldingIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> HoldingOut:
     ticker = _validate_ticker(payload.ticker)
     if payload.shares <= 0:
         raise HTTPException(status_code=422, detail="Shares must be > 0.")
@@ -448,10 +462,14 @@ async def add_holding(payload: HoldingIn, db: Session = Depends(get_db)) -> Hold
     # Optionally fetch name from Yahoo at add time.
     q = await yahoo_quotes.fetch_ticker_data(ticker)
     if q is None:
-        logger.warning("Could not validate ticker '%s' against Yahoo Finance on add — proceeding anyway.", ticker)
+        logger.warning(
+            "Could not validate ticker '%s' against Yahoo Finance on add — proceeding anyway.",
+            ticker,
+        )
     name = q.get("name") if q else None
 
     holding = Holding(
+        user_id=user.id,
         ticker=ticker,
         name=name,
         shares=payload.shares,
@@ -462,7 +480,7 @@ async def add_holding(payload: HoldingIn, db: Session = Depends(get_db)) -> Hold
     db.add(holding)
     db.commit()
     db.refresh(holding)
-    logger.info("Holding added: ticker=%s shares=%s", ticker, payload.shares)
+    logger.info("Holding added: user=%s ticker=%s shares=%s", user.clerk_id, ticker, payload.shares)
     return holding
 
 
@@ -471,6 +489,7 @@ def update_holding(
     holding_id: uuid.UUID,
     payload: HoldingIn,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> HoldingOut:
     ticker = _validate_ticker(payload.ticker)
     if payload.shares <= 0:
@@ -478,7 +497,9 @@ def update_holding(
     if payload.avg_cost_per_share <= 0:
         raise HTTPException(status_code=422, detail="Average cost per share must be > 0.")
 
-    row = db.query(Holding).filter_by(id=holding_id).first()
+    row = db.query(Holding).filter(
+        Holding.id == holding_id, Holding.user_id == user.id
+    ).first()
     if not row:
         raise HTTPException(status_code=404, detail="Holding not found.")
     row.ticker = ticker
@@ -488,13 +509,19 @@ def update_holding(
     row.notes = payload.notes
     db.commit()
     db.refresh(row)
-    logger.info("Holding updated: id=%s ticker=%s", holding_id, ticker)
+    logger.info("Holding updated: user=%s id=%s ticker=%s", user.clerk_id, holding_id, ticker)
     return row
 
 
 @router.delete("/{holding_id}")
-def delete_holding(holding_id: uuid.UUID, db: Session = Depends(get_db)) -> dict:
-    row = db.query(Holding).filter_by(id=holding_id).first()
+def delete_holding(
+    holding_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    row = db.query(Holding).filter(
+        Holding.id == holding_id, Holding.user_id == user.id
+    ).first()
     if not row:
         raise HTTPException(status_code=404, detail="Holding not found.")
     db.delete(row)

@@ -4,9 +4,12 @@ import Link from "next/link";
 import type { MouseEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { UserButton } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
 import { useCurrency } from "@/lib/currency";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { getAuthMe } from "@/lib/api";
+import type { AuthMe } from "@/lib/types";
 import {
   clearAIPipelineState,
   readAIPrewarmState,
@@ -66,6 +69,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { currency, setCurrency, usdPerCad, rateLoading } = useCurrency();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [authMe, setAuthMe] = useState<AuthMe | null>(null);
   const [aiPrewarm, setAiPrewarm] = useState<AIPrewarmState>({
     epoch: 0,
     started: false,
@@ -88,6 +92,30 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
+    const loadAuthMe = async (attempt = 0) => {
+      try {
+        const me = await getAuthMe();
+        if (!cancelled) {
+          setAuthMe(me);
+        }
+      } catch {
+        if (!cancelled && attempt < 2) {
+          window.setTimeout(() => {
+            void loadAuthMe(attempt + 1);
+          }, 500);
+        }
+      }
+    };
+
+    void loadAuthMe();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     setMobileMenuOpen(false);
   }, [pathname]);
 
@@ -100,6 +128,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
     return "AI Partial";
   }, [aiPrewarm.ai_enabled, aiPrewarm.completed, aiPrewarm.started, aiReadyCount]);
   const aiProgressPct = Math.min(100, Math.max(0, Math.round((aiReadyCount / 3) * 100)));
+  const tierLabel = (authMe?.tier ?? "observer").toUpperCase();
+  const tierClassName =
+    authMe?.tier === "command"
+      ? "border-accent/40 bg-accent/10 text-accent"
+      : authMe?.tier === "analyst"
+        ? "border-positive/30 bg-positive/10 text-positive"
+        : "border-border bg-white/[0.03] text-muted";
 
   const handleStartPipeline = async () => {
     if (aiPipelineBusy) return;
@@ -295,12 +330,26 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <div className="space-y-3">
             <div className="border-t border-border pt-3">
               <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#2A2A2E] text-[11px] font-semibold text-[#8B8B90]">
-                  DR
-                </div>
-                <div>
-                  <p className="text-xs text-white">Dhiaa Risk Desk</p>
-                  <p className="text-[10px] text-muted">Live intelligence</p>
+                <UserButton
+                  afterSignOutUrl="/sign-in"
+                  appearance={{
+                    elements: {
+                      avatarBox: "h-8 w-8",
+                    },
+                  }}
+                />
+                <div className="min-w-0">
+                  <p className="truncate text-xs text-white">
+                    {authMe?.display_name || authMe?.email || "Signed in"}
+                  </p>
+                  <div
+                    className={cn(
+                      "mt-0.5 inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-mono",
+                      tierClassName,
+                    )}
+                  >
+                    {tierLabel}
+                  </div>
                 </div>
               </div>
               <p className="mt-2 text-[10px] text-muted font-semibold text-amber-500/80">

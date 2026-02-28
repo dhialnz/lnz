@@ -54,6 +54,15 @@ class Settings(BaseSettings):
     # Leave empty (default) to disable — safe for local / development use.
     LNZ_API_KEY: str = ""
 
+    # ── Clerk multi-user auth ─────────────────────────────────────────────────
+    # Required for multi-user mode. Leave empty to keep the old single-user mode.
+    # CLERK_JWKS_URL: e.g. https://<your-clerk-domain>/.well-known/jwks.json
+    CLERK_JWKS_URL: str = ""
+    # CLERK_ISSUER: e.g. https://<your-clerk-domain>
+    CLERK_ISSUER: str = ""
+    # CLERK_WEBHOOK_SECRET: whsec_... from Clerk dashboard → Webhooks
+    CLERK_WEBHOOK_SECRET: str = ""
+
     # ── API explorer ─────────────────────────────────────────────────────────
     # Set to true in production to hide /docs and /redoc endpoints.
     HIDE_DOCS: bool = False

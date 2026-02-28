@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.routers import ai, fx, health, holdings, market, news, portfolio, recommendations, rulebook
+from app.routers import ai, auth, fx, health, holdings, market, news, portfolio, recommendations, rulebook
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -120,6 +120,7 @@ async def log_requests(request: Request, call_next) -> Response:  # type: ignore
 API_PREFIX = "/api/v1"
 
 app.include_router(health.router, prefix=API_PREFIX)
+app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(portfolio.router, prefix=API_PREFIX)
 app.include_router(recommendations.router, prefix=API_PREFIX)
 app.include_router(market.router, prefix=API_PREFIX)

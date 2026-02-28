@@ -9,13 +9,15 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.market import NewsEvent
-from app.routers.holdings import get_holdings
+from app.models.user import User
+from app.routers.holdings import get_holdings_for_user
 from app.schemas.market import (
     HoldingImpactOut,
     NewsEventImpactOut,
     NewsEventOut,
     NewsPortfolioImpactOut,
 )
+from app.services.auth_service import get_current_user
 from app.services import news as news_service
 from app.services.news_impact import aggregate_top_impacted, impact_for_event
 
@@ -119,9 +121,10 @@ def get_events(
 async def ingest_news(
     entities: Optional[list[str]] = None,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     if not entities:
-        holdings_snapshot = await get_holdings(db=db)
+        holdings_snapshot = await get_holdings_for_user(db=db, user_id=user.id)
         entities = _news_entities_from_holdings(holdings_snapshot)
     try:
         items = await news_service.fetch_news(entities=entities)
@@ -137,8 +140,9 @@ async def get_portfolio_news_impact(
     limit: int = Query(40, ge=1, le=120),
     refresh: bool = Query(False, description="Fetch latest headlines before scoring"),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
-    holdings_snapshot = await get_holdings(db=db)
+    holdings_snapshot = await get_holdings_for_user(db=db, user_id=user.id)
     holdings = holdings_snapshot.holdings
 
     if refresh:

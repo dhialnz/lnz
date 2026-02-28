@@ -15,6 +15,8 @@ from app.database import get_db
 from app.models.portfolio import PortfolioImport, PortfolioSeries
 from app.models.rulebook import Rulebook
 from app.models.recommendations import Recommendation
+from app.models.user import User
+from app.services.auth_service import get_current_user
 from app.schemas.portfolio import (
     ClearImportedDataResult,
     ImportResult,
@@ -42,10 +44,11 @@ def _safe_val(val):
     return val
 
 
-def _get_or_create_rulebook(db: Session) -> Rulebook:
-    rb = db.query(Rulebook).first()
+def _get_or_create_rulebook(db: Session, user_id) -> Rulebook:
+    rb = db.query(Rulebook).filter(Rulebook.user_id == user_id).first()
     if rb is None:
-        rb = Rulebook()
+        from app.models.rulebook import DEFAULT_THRESHOLDS, DEFAULT_RULE_TEXT
+        rb = Rulebook(user_id=user_id)
         db.add(rb)
         db.commit()
         db.refresh(rb)
@@ -136,11 +139,16 @@ def _fetch_spy_close_map_for_date_range(start_date, end_date) -> dict:
     return close_map
 
 
-def _sync_spy_history_and_recompute(db: Session) -> int:
+def _sync_spy_history_and_recompute(db: Session, user_id) -> int:
     """Backfill spy_close, recompute benchmark_return from closes, and recompute all derived metrics."""
     import pandas as pd
 
-    rows = db.query(PortfolioSeries).order_by(PortfolioSeries.date).all()
+    rows = (
+        db.query(PortfolioSeries)
+        .filter(PortfolioSeries.user_id == user_id)
+        .order_by(PortfolioSeries.date)
+        .all()
+    )
     if len(rows) < 2:
         return 0
 
@@ -207,6 +215,7 @@ async def import_excel(
     file: UploadFile = File(...),
     dayfirst: bool = Form(False),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     # Validate file type and size
     if not file.filename or not file.filename.lower().endswith(".xlsx"):
@@ -233,9 +242,13 @@ async def import_excel(
     # Classify regime
     regime_name, regime_explanation = regime.classify_regime(df)
 
-    # Persist series (upsert by date)
+    # Persist series (upsert by user_id + date)
     for _, row in df.iterrows():
-        existing = db.query(PortfolioSeries).filter_by(date=row["date"]).first()
+        existing = (
+            db.query(PortfolioSeries)
+            .filter(PortfolioSeries.user_id == user.id, PortfolioSeries.date == row["date"])
+            .first()
+        )
         if existing:
             for col in [
                 "total_value", "net_deposits", "period_deposits",
@@ -246,7 +259,7 @@ async def import_excel(
             ]:
                 setattr(existing, col, _safe_val(row.get(col)))
         else:
-            kwargs = {}
+            kwargs = {"user_id": user.id}
             for col in [
                 "date", "total_value", "net_deposits", "period_deposits",
                 "spy_close", "period_return", "benchmark_return",
@@ -265,6 +278,7 @@ async def import_excel(
 
     # Log import record
     imp = PortfolioImport(
+        user_id=user.id,
         filename=file.filename,
         row_count=len(df),
         notes="; ".join(parse_errors) if parse_errors else None,
@@ -273,11 +287,12 @@ async def import_excel(
     db.add(imp)
 
     # Run rule engine and persist recommendations
-    rb = _get_or_create_rulebook(db)
+    rb = _get_or_create_rulebook(db, user.id)
     recs = rules.run_rule_engine(df, regime_name, rb.thresholds)
     for r in recs:
         db.add(
             Recommendation(
+                user_id=user.id,
                 title=r["title"],
                 risk_level=r["risk_level"],
                 category=r["category"],
@@ -312,14 +327,25 @@ async def preview_excel(file: UploadFile = File(...)):
 
 
 @router.get("/series", response_model=list[PortfolioSeriesRow])
-def get_series(db: Session = Depends(get_db)):
-    rows = db.query(PortfolioSeries).order_by(PortfolioSeries.date).all()
+def get_series(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    rows = (
+        db.query(PortfolioSeries)
+        .filter(PortfolioSeries.user_id == user.id)
+        .order_by(PortfolioSeries.date)
+        .all()
+    )
     return rows
 
 
 @router.post("/sync-spy-history", response_model=SpyHistorySyncResult)
-def sync_spy_history(db: Session = Depends(get_db)):
-    updated = _sync_spy_history_and_recompute(db)
+def sync_spy_history(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    updated = _sync_spy_history_and_recompute(db, user.id)
     return SpyHistorySyncResult(
         updated_rows=updated,
         message="SPY close history synced and benchmark/alpha metrics recomputed.",
@@ -327,8 +353,16 @@ def sync_spy_history(db: Session = Depends(get_db)):
 
 
 @router.get("/summary", response_model=PortfolioSummary)
-def get_summary(db: Session = Depends(get_db)):
-    rows = db.query(PortfolioSeries).order_by(PortfolioSeries.date).all()
+def get_summary(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    rows = (
+        db.query(PortfolioSeries)
+        .filter(PortfolioSeries.user_id == user.id)
+        .order_by(PortfolioSeries.date)
+        .all()
+    )
     if not rows:
         raise HTTPException(status_code=404, detail="No portfolio data found. Please import data.")
 
@@ -366,8 +400,11 @@ def get_summary(db: Session = Depends(get_db)):
 
 
 @router.delete("/imported-data", response_model=ClearImportedDataResult)
-def clear_imported_data(db: Session = Depends(get_db)):
-    imports = db.query(PortfolioImport).all()
+def clear_imported_data(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    imports = db.query(PortfolioImport).filter(PortfolioImport.user_id == user.id).all()
     deleted_files = 0
     for imp in imports:
         file_path = imp.raw_file_path
@@ -379,9 +416,21 @@ def clear_imported_data(db: Session = Depends(get_db)):
                 # If file deletion fails, keep DB cleanup successful.
                 pass
 
-    deleted_series_rows = db.query(PortfolioSeries).delete(synchronize_session=False)
-    deleted_import_rows = db.query(PortfolioImport).delete(synchronize_session=False)
-    deleted_recommendation_rows = db.query(Recommendation).delete(synchronize_session=False)
+    deleted_series_rows = (
+        db.query(PortfolioSeries)
+        .filter(PortfolioSeries.user_id == user.id)
+        .delete(synchronize_session=False)
+    )
+    deleted_import_rows = (
+        db.query(PortfolioImport)
+        .filter(PortfolioImport.user_id == user.id)
+        .delete(synchronize_session=False)
+    )
+    deleted_recommendation_rows = (
+        db.query(Recommendation)
+        .filter(Recommendation.user_id == user.id)
+        .delete(synchronize_session=False)
+    )
     db.commit()
 
     return ClearImportedDataResult(
@@ -394,10 +443,19 @@ def clear_imported_data(db: Session = Depends(get_db)):
 
 
 @router.post("/manual-week", response_model=ManualWeekEntryResult)
-def add_manual_week(entry: ManualWeekEntryIn, db: Session = Depends(get_db)):
+def add_manual_week(
+    entry: ManualWeekEntryIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     import pandas as pd
 
-    rows = db.query(PortfolioSeries).order_by(PortfolioSeries.date).all()
+    rows = (
+        db.query(PortfolioSeries)
+        .filter(PortfolioSeries.user_id == user.id)
+        .order_by(PortfolioSeries.date)
+        .all()
+    )
     if not rows:
         raise HTTPException(
             status_code=400,
@@ -473,7 +531,7 @@ def add_manual_week(entry: ManualWeekEntryIn, db: Session = Depends(get_db)):
             ]:
                 setattr(existing, col, _safe_val(row.get(col)))
         else:
-            kwargs = {}
+            kwargs = {"user_id": user.id}
             for col in [
                 "date", "total_value", "net_deposits", "period_deposits",
                 "spy_close", "period_return", "benchmark_return",

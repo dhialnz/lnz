@@ -8,16 +8,23 @@ from app.database import get_db
 from app.models.portfolio import PortfolioSeries
 from app.models.recommendations import Recommendation
 from app.models.rulebook import Rulebook, DEFAULT_THRESHOLDS
+from app.models.user import User
 from app.schemas.recommendations import RecommendationOut
 from app.services import metrics, regime, rules
+from app.services.auth_service import get_current_user
 
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 
 
 @router.get("", response_model=list[RecommendationOut])
-def get_recommendations(limit: int = 50, db: Session = Depends(get_db)):
+def get_recommendations(
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     return (
         db.query(Recommendation)
+        .filter(Recommendation.user_id == user.id)
         .order_by(Recommendation.created_at.desc())
         .limit(limit)
         .all()
@@ -25,9 +32,17 @@ def get_recommendations(limit: int = 50, db: Session = Depends(get_db)):
 
 
 @router.post("/run", response_model=list[RecommendationOut])
-def run_recommendations(db: Session = Depends(get_db)):
+def run_recommendations(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     """Recompute metrics and re-run rule engine. Stores new recommendations."""
-    rows = db.query(PortfolioSeries).order_by(PortfolioSeries.date).all()
+    rows = (
+        db.query(PortfolioSeries)
+        .filter(PortfolioSeries.user_id == user.id)
+        .order_by(PortfolioSeries.date)
+        .all()
+    )
     if not rows:
         raise HTTPException(status_code=404, detail="No portfolio data. Import data first.")
 
@@ -52,13 +67,14 @@ def run_recommendations(db: Session = Depends(get_db)):
 
     regime_name, _ = regime.classify_regime(df)
 
-    rb = db.query(Rulebook).first()
+    rb = db.query(Rulebook).filter(Rulebook.user_id == user.id).first()
     thresholds = rb.thresholds if rb else DEFAULT_THRESHOLDS
 
     recs_dicts = rules.run_rule_engine(df, regime_name, thresholds)
     created = []
     for r in recs_dicts:
         rec = Recommendation(
+            user_id=user.id,
             title=r["title"],
             risk_level=r["risk_level"],
             category=r["category"],
