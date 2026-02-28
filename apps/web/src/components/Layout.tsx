@@ -40,10 +40,7 @@ const NAV_ITEMS: Array<{ href: string; label: string; icon: IconName }> = [
   { href: "/settings", label: "Settings", icon: "settings" },
 ];
 
-const DEFAULT_CLERK_SIGN_IN_URL =
-  "https://elegant-moose-18.accounts.dev/sign-in?redirect_url=https%3A%2F%2Fapp.alphenzi.com%2F";
-const CLERK_SIGN_IN_URL =
-  process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL ?? DEFAULT_CLERK_SIGN_IN_URL;
+const CLERK_SIGN_IN_URL = "/sign-in";
 
 function IconGlyph({ name, active }: { name: IconName; active: boolean }) {
   const stroke = active ? "#FF5C00" : "#6B6B70";

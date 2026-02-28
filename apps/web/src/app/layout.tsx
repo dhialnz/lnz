@@ -24,7 +24,11 @@ export default function RootLayout({
   const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
   return (
-    <ClerkProvider publishableKey={publishableKey}>
+    <ClerkProvider
+      publishableKey={publishableKey}
+      signInUrl="/sign-in"
+      signUpUrl="/sign-up"
+    >
       <html lang="en" className="dark">
         <body>
           <ClerkApiSync />

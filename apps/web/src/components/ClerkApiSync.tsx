@@ -13,13 +13,18 @@ import { setApiTokenGetter } from "@/lib/api";
  * the session is validated, which would produce transient 401s.
  */
 export function ClerkApiSync() {
-  const { getToken, isLoaded } = useAuth();
+  const { getToken, isLoaded, isSignedIn } = useAuth();
 
   useEffect(() => {
-    if (isLoaded) {
-      setApiTokenGetter(() => getToken());
-    }
-  }, [getToken, isLoaded]);
+    if (!isLoaded) return;
+    setApiTokenGetter(async () => {
+      if (!isSignedIn) return null;
+      const token = await getToken();
+      if (token) return token;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      return getToken();
+    });
+  }, [getToken, isLoaded, isSignedIn]);
 
   return null;
 }
