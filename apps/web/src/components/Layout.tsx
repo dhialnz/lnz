@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { MouseEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { UserButton } from "@clerk/nextjs";
+import { UserButton, useClerk } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
 import { useCurrency } from "@/lib/currency";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -67,9 +67,11 @@ function IconGlyph({ name, active }: { name: IconName; active: boolean }) {
 export function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { signOut } = useClerk();
   const { currency, setCurrency, usdPerCad, rateLoading } = useCurrency();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [authMe, setAuthMe] = useState<AuthMe | null>(null);
+  const [logoutBusy, setLogoutBusy] = useState(false);
   const [aiPrewarm, setAiPrewarm] = useState<AIPrewarmState>({
     epoch: 0,
     started: false,
@@ -151,6 +153,21 @@ export function Layout({ children }: { children: React.ReactNode }) {
     if (aiPipelineBusy) return;
     clearAIPipelineState();
     setAiPrewarm(readAIPrewarmState());
+  };
+
+  const handleLogout = async () => {
+    if (logoutBusy) return;
+    setLogoutBusy(true);
+    try {
+      clearAIPipelineState();
+      setAiPrewarm(readAIPrewarmState());
+      setAuthMe(null);
+      await signOut({ redirectUrl: "/sign-in" });
+    } catch {
+      window.location.assign("/sign-in");
+    } finally {
+      setLogoutBusy(false);
+    }
   };
 
   const handleNavClick = (href: string) => (event: MouseEvent<HTMLAnchorElement>) => {
@@ -352,6 +369,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   </div>
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={() => void handleLogout()}
+                disabled={logoutBusy}
+                className="mt-2 w-full rounded-md border border-border px-2 py-1.5 text-[11px] font-mono text-muted transition hover:bg-white/[0.03] hover:text-white disabled:opacity-50"
+              >
+                {logoutBusy ? "Logging out..." : "Log out"}
+              </button>
               <p className="mt-2 text-[10px] text-muted font-semibold text-amber-500/80">
                 ! Not financial advice.
               </p>
