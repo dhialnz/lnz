@@ -39,7 +39,8 @@ const AI_TIMEOUT_MS = 90_000;
 const TOKEN_GETTER_WAIT_MS = 4_000;
 const TOKEN_RESOLVE_TIMEOUT_MS = 5_000;
 const SERVER_TOKEN_TIMEOUT_MS = 4_000;
-const ACCESS_TOKEN_CACHE_MS = 45_000;
+const ACCESS_TOKEN_CACHE_MS = 20_000;
+const TOKEN_MIN_TTL_SEC = 30;
 
 // Clerk token getter — injected by ClerkApiSync on mount so this plain module
 // can attach Authorization headers without importing React/Clerk hooks.
@@ -58,12 +59,45 @@ function readCachedAccessToken(): string | null {
     _cachedAccessTokenAt = 0;
     return null;
   }
+  if (isTokenExpiringSoon(_cachedAccessToken)) {
+    _cachedAccessToken = null;
+    _cachedAccessTokenAt = 0;
+    return null;
+  }
   return _cachedAccessToken;
 }
 
 function cacheAccessToken(token: string): void {
+  if (isTokenExpiringSoon(token)) return;
   _cachedAccessToken = token;
   _cachedAccessTokenAt = Date.now();
+}
+
+function clearCachedAccessToken(): void {
+  _cachedAccessToken = null;
+  _cachedAccessTokenAt = 0;
+}
+
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const payloadBase64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = payloadBase64.padEnd(payloadBase64.length + ((4 - (payloadBase64.length % 4)) % 4), "=");
+    const raw = atob(padded);
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function isTokenExpiringSoon(token: string): boolean {
+  const payload = decodeJwtPayload(token);
+  if (!payload) return false;
+  const exp = payload.exp;
+  if (typeof exp !== "number") return false;
+  const nowSec = Math.floor(Date.now() / 1000);
+  return exp - nowSec <= TOKEN_MIN_TTL_SEC;
 }
 
 async function waitForTokenGetter(timeoutMs = TOKEN_GETTER_WAIT_MS): Promise<(() => Promise<string | null>) | null> {
@@ -109,8 +143,10 @@ async function resolveAccessToken(path: string): Promise<string | null> {
         }),
       ]);
       if (token) {
-        cacheAccessToken(token);
-        return token;
+        if (!isTokenExpiringSoon(token)) {
+          cacheAccessToken(token);
+          return token;
+        }
       }
     } catch {
       // Non-fatal: try server fallback below.
@@ -121,8 +157,10 @@ async function resolveAccessToken(path: string): Promise<string | null> {
   // Fallback: obtain token server-side via Clerk auth() in a Next route.
   const serverToken = await fetchServerAccessToken();
   if (serverToken) {
-    cacheAccessToken(serverToken);
-    return serverToken;
+    if (!isTokenExpiringSoon(serverToken)) {
+      cacheAccessToken(serverToken);
+      return serverToken;
+    }
   }
 
   return null;
@@ -155,6 +193,17 @@ async function request<T>(
     clearTimeout(timer);
     if (!res.ok) {
       const detail = await res.json().catch(() => ({ detail: res.statusText }));
+      const detailText =
+        typeof detail?.detail === "string" ? detail.detail.toLowerCase() : "";
+      const isAuthFailure =
+        [401, 403].includes(res.status) &&
+        (detailText.includes("signature has expired") ||
+          detailText.includes("invalid token") ||
+          detailText.includes("missing authorization header") ||
+          detailText.includes("missing auth token"));
+      if (isAuthFailure) {
+        clearCachedAccessToken();
+      }
       // Clerk cold-start can transiently yield 401/403 for a moment while
       // token/session state settles. Retry GET once before surfacing an error.
       if (_retries > 0 && [401, 403].includes(res.status) && method === "GET") {

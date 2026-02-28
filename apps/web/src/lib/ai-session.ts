@@ -266,6 +266,19 @@ async function withRetries<T>(
   return { ok: false, error: lastError };
 }
 
+async function requireAiOutput<T extends { used_ai: boolean; model?: string }>(
+  fn: () => Promise<T>,
+  stage: "dashboard" | "news" | "assistant",
+): Promise<T> {
+  const result = await fn();
+  if (!result.used_ai) {
+    throw new Error(
+      `${stage} returned non-AI output (${result.model || "unknown model"})`,
+    );
+  }
+  return result;
+}
+
 export async function startGlobalAIPrewarm(force = false): Promise<void> {
   if (!hasWindow()) return;
   const epoch = getAIEpoch();
@@ -334,18 +347,14 @@ export async function startGlobalAIPrewarm(force = false): Promise<void> {
     for (let round = 1; round <= maxRounds; round += 1) {
       if (!dashboardReady) {
         const dashboard = await withRetries(
-          () => getAIDashboardRecommendations(),
+          () => requireAiOutput(() => getAIDashboardRecommendations(), "dashboard"),
           PIPELINE_STAGE_RETRIES,
           PIPELINE_RETRY_BASE_DELAY_MS,
         );
         if (dashboard.ok) {
           writeLatestDashboardRecommendations(dashboard.value.recommendations, dashboard.value.model, epoch);
-          if (dashboard.value.used_ai) {
-            dashboardReady = true;
-            dashboardError = "";
-          } else {
-            dashboardError = `returned non-AI output (${dashboard.value.model || "unknown model"})`;
-          }
+          dashboardReady = true;
+          dashboardError = "";
         } else {
           dashboardError = dashboard.error;
         }
@@ -371,18 +380,14 @@ export async function startGlobalAIPrewarm(force = false): Promise<void> {
 
       if (!newsReady) {
         const news = await withRetries(
-          () => getAINewsSummary(),
+          () => requireAiOutput(() => getAINewsSummary(), "news"),
           PIPELINE_STAGE_RETRIES,
           PIPELINE_RETRY_BASE_DELAY_MS,
         );
         if (news.ok) {
           writeLatestNewsSummary(news.value.summary, news.value.model, epoch);
-          if (news.value.used_ai) {
-            newsReady = true;
-            newsError = "";
-          } else {
-            newsError = `returned non-AI output (${news.value.model || "unknown model"})`;
-          }
+          newsReady = true;
+          newsError = "";
         } else {
           newsError = news.error;
         }
@@ -397,18 +402,14 @@ export async function startGlobalAIPrewarm(force = false): Promise<void> {
 
       if (!assistantReady) {
         const assistant = await withRetries(
-          () => getPortfolioInsights(),
+          () => requireAiOutput(() => getPortfolioInsights(), "assistant"),
           PIPELINE_STAGE_RETRIES,
           PIPELINE_RETRY_BASE_DELAY_MS,
         );
         if (assistant.ok) {
           writeLatestAssistantInsights(assistant.value, assistant.value.model, epoch);
-          if (assistant.value.used_ai) {
-            assistantReady = true;
-            assistantError = "";
-          } else {
-            assistantError = `returned non-AI output (${assistant.value.model || "unknown model"})`;
-          }
+          assistantReady = true;
+          assistantError = "";
         } else {
           assistantError = assistant.error;
         }
