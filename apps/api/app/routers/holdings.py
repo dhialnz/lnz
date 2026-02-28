@@ -32,6 +32,7 @@ logger = logging.getLogger("lnz.holdings")
 _VALID_TICKER = re.compile(r"^[A-Z0-9]{1,6}(\.[A-Z]{1,3})?$")
 
 _RISK_FREE_ANNUAL = 0.045  # 4.5% annualised risk-free rate
+_OBSERVER_HOLDINGS_LIMIT = 5
 
 
 def _safe_float(val) -> float | None:
@@ -470,6 +471,20 @@ async def add_holding(
         raise HTTPException(status_code=422, detail="Shares must be > 0.")
     if payload.avg_cost_per_share <= 0:
         raise HTTPException(status_code=422, detail="Average cost per share must be > 0.")
+    if user.tier == "observer":
+        current_count = (
+            db.query(Holding)
+            .filter(Holding.user_id == user.id, Holding.portfolio_id == portfolio_id)
+            .count()
+        )
+        if current_count >= _OBSERVER_HOLDINGS_LIMIT:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"Observer tier allows up to {_OBSERVER_HOLDINGS_LIMIT} holdings per portfolio. "
+                    "Upgrade to Analyst or Command to add more."
+                ),
+            )
 
     # Optionally fetch name from Yahoo at add time.
     q = await yahoo_quotes.fetch_ticker_data(ticker)
