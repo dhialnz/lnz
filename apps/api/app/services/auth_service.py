@@ -135,15 +135,33 @@ async def verify_clerk_token(token: str) -> dict[str, Any]:
 
 async def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        logger.warning(
-            "Missing Authorization header: method=%s path=%s has_cookie=%s",
-            request.method,
-            request.url.path,
-            bool(request.headers.get("cookie")),
+    token: str | None = None
+    if auth_header.startswith("Bearer "):
+        token = auth_header.removeprefix("Bearer ").strip()
+    else:
+        # Fallback for environments where browser auth is cookie-backed but
+        # client token injection is delayed/flaky (common during Clerk warmup).
+        token = (
+            request.cookies.get("__session")
+            or request.cookies.get("__clerk_db_jwt")
+            or request.cookies.get("__clerk_session")
         )
-        raise HTTPException(status_code=401, detail="Missing Authorization header.")
-    token = auth_header.removeprefix("Bearer ").strip()
+        if token:
+            logger.info(
+                "Using Clerk session cookie token fallback: method=%s path=%s",
+                request.method,
+                request.url.path,
+            )
+        else:
+            logger.warning(
+                "Missing auth token: method=%s path=%s has_cookie=%s cookie_names=%s",
+                request.method,
+                request.url.path,
+                bool(request.headers.get("cookie")),
+                ",".join(sorted(request.cookies.keys())),
+            )
+            raise HTTPException(status_code=401, detail="Missing Authorization header.")
+
     try:
         claims = await verify_clerk_token(token)
     except HTTPException as exc:
