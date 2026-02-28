@@ -76,13 +76,21 @@ def _issuer_candidates() -> list[str]:
 
 
 async def verify_clerk_token(token: str) -> dict[str, Any]:
+    if not isinstance(token, str):
+        raise HTTPException(status_code=401, detail="Invalid token type.")
+    token = token.strip()
+    if token.lower().startswith("bearer "):
+        token = token[7:].strip()
+    if token.count(".") != 2:
+        raise HTTPException(status_code=401, detail="Invalid token format.")
+
     jwks = await _get_clerk_jwks()
     issuers = _issuer_candidates()
     if not jwks or not issuers:
         raise HTTPException(status_code=503, detail="Auth not configured on server.")
     try:
         header = jwt.get_unverified_header(token)
-    except JWTError as exc:
+    except (JWTError, ValueError, TypeError) as exc:
         raise HTTPException(status_code=401, detail="Invalid token header.") from exc
 
     kid = header.get("kid")
@@ -141,11 +149,13 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)) -> U
     else:
         # Fallback for environments where browser auth is cookie-backed but
         # client token injection is delayed/flaky (common during Clerk warmup).
-        token = (
-            request.cookies.get("__session")
-            or request.cookies.get("__clerk_db_jwt")
-            or request.cookies.get("__clerk_session")
-        )
+        # Prefer explicit Clerk JWT cookies first.
+        candidate_tokens = [
+            request.cookies.get("__clerk_db_jwt"),
+            request.cookies.get("__session"),
+            request.cookies.get("__clerk_session"),
+        ]
+        token = next((t for t in candidate_tokens if isinstance(t, str) and t.count(".") == 2), None)
         if token:
             logger.info(
                 "Using Clerk session cookie token fallback: method=%s path=%s",
@@ -171,6 +181,13 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)) -> U
             exc.detail,
         )
         raise
+    except Exception as exc:  # pragma: no cover - defensive guard against 500s
+        logger.exception(
+            "Unexpected token verification error: path=%s err=%s",
+            request.url.path,
+            exc,
+        )
+        raise HTTPException(status_code=401, detail="Invalid token.")
     clerk_id: str = claims.get("sub", "")
     if not clerk_id:
         raise HTTPException(status_code=401, detail="Token missing sub claim.")
