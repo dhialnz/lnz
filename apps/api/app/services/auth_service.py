@@ -56,9 +56,29 @@ def _select_signing_key(jwks: dict[str, Any], kid: str | None) -> dict[str, Any]
     return None
 
 
+def _issuer_candidates() -> list[str]:
+    base = (settings.CLERK_ISSUER or "").strip().rstrip("/")
+    if not base:
+        return []
+    candidates = [base]
+    if ".clerk.accounts.dev" in base:
+        candidates.append(base.replace(".clerk.accounts.dev", ".accounts.dev"))
+    elif ".accounts.dev" in base:
+        candidates.append(base.replace(".accounts.dev", ".clerk.accounts.dev"))
+
+    seen: set[str] = set()
+    unique: list[str] = []
+    for issuer in candidates:
+        if issuer and issuer not in seen:
+            seen.add(issuer)
+            unique.append(issuer)
+    return unique
+
+
 async def verify_clerk_token(token: str) -> dict[str, Any]:
     jwks = await _get_clerk_jwks()
-    if not jwks or not settings.CLERK_ISSUER:
+    issuers = _issuer_candidates()
+    if not jwks or not issuers:
         raise HTTPException(status_code=503, detail="Auth not configured on server.")
     try:
         header = jwt.get_unverified_header(token)
@@ -77,25 +97,62 @@ async def verify_clerk_token(token: str) -> dict[str, Any]:
     if signing_key is None:
         raise HTTPException(status_code=401, detail="Signing key not found for token.")
 
+    last_error: JWTError | None = None
+    for issuer in issuers:
+        try:
+            claims = jwt.decode(
+                token,
+                signing_key,
+                algorithms=["RS256"],
+                options={"verify_aud": False},
+                issuer=issuer,
+            )
+            return claims
+        except JWTError as exc:
+            last_error = exc
+
+    # Fallback decode without issuer verification so we can validate accepted
+    # issuer variants manually and produce a clearer diagnostic log line.
     try:
         claims = jwt.decode(
             token,
             signing_key,
             algorithms=["RS256"],
-            options={"verify_aud": False},
-            issuer=settings.CLERK_ISSUER,
+            options={"verify_aud": False, "verify_iss": False},
         )
     except JWTError as exc:
         raise HTTPException(status_code=401, detail=f"Invalid token: {exc}") from exc
-    return claims
+
+    iss = str(claims.get("iss") or "").rstrip("/")
+    if iss in issuers:
+        return claims
+
+    detail = f"Invalid token issuer: {iss or 'missing'}"
+    if last_error is not None:
+        detail = f"{detail}; decode_error={last_error}"
+    raise HTTPException(status_code=401, detail=detail)
 
 
 async def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
+        logger.warning(
+            "Missing Authorization header: method=%s path=%s has_cookie=%s",
+            request.method,
+            request.url.path,
+            bool(request.headers.get("cookie")),
+        )
         raise HTTPException(status_code=401, detail="Missing Authorization header.")
     token = auth_header.removeprefix("Bearer ").strip()
-    claims = await verify_clerk_token(token)
+    try:
+        claims = await verify_clerk_token(token)
+    except HTTPException as exc:
+        logger.warning(
+            "Token verification failed: path=%s detail=%s",
+            request.url.path,
+            exc.detail,
+        )
+        raise
     clerk_id: str = claims.get("sub", "")
     if not clerk_id:
         raise HTTPException(status_code=401, detail="Token missing sub claim.")

@@ -22,11 +22,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  const signInUrl = process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL || "/sign-in";
 
   return (
     <ClerkProvider
       publishableKey={publishableKey}
-      signInUrl="/sign-in"
+      signInUrl={signInUrl}
       signUpUrl="/sign-up"
     >
       <html lang="en" className="dark">

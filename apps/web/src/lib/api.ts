@@ -38,12 +38,32 @@ const DEFAULT_TIMEOUT_MS = 45_000;
 const AI_TIMEOUT_MS = 90_000;
 const TOKEN_GETTER_WAIT_MS = 4_000;
 const TOKEN_RESOLVE_TIMEOUT_MS = 5_000;
+const SERVER_TOKEN_TIMEOUT_MS = 4_000;
+const ACCESS_TOKEN_CACHE_MS = 45_000;
 
 // Clerk token getter — injected by ClerkApiSync on mount so this plain module
 // can attach Authorization headers without importing React/Clerk hooks.
 let _getToken: (() => Promise<string | null>) | null = null;
+let _cachedAccessToken: string | null = null;
+let _cachedAccessTokenAt = 0;
+
 export function setApiTokenGetter(fn: () => Promise<string | null>): void {
   _getToken = fn;
+}
+
+function readCachedAccessToken(): string | null {
+  if (!_cachedAccessToken) return null;
+  if (Date.now() - _cachedAccessTokenAt > ACCESS_TOKEN_CACHE_MS) {
+    _cachedAccessToken = null;
+    _cachedAccessTokenAt = 0;
+    return null;
+  }
+  return _cachedAccessToken;
+}
+
+function cacheAccessToken(token: string): void {
+  _cachedAccessToken = token;
+  _cachedAccessTokenAt = Date.now();
 }
 
 async function waitForTokenGetter(timeoutMs = TOKEN_GETTER_WAIT_MS): Promise<(() => Promise<string | null>) | null> {
@@ -54,22 +74,58 @@ async function waitForTokenGetter(timeoutMs = TOKEN_GETTER_WAIT_MS): Promise<(()
   return _getToken;
 }
 
-async function resolveAccessToken(path: string): Promise<string | null> {
-  const getter = _getToken ?? (await waitForTokenGetter());
-  if (!getter) return null;
+async function fetchServerAccessToken(): Promise<string | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SERVER_TOKEN_TIMEOUT_MS);
   try {
-    const token = await Promise.race<string | null>([
-      getter(),
-      new Promise<string | null>((resolve) => {
-        setTimeout(() => resolve(null), TOKEN_RESOLVE_TIMEOUT_MS);
-      }),
-    ]);
-    return token ?? null;
+    const res = await fetch("/api/auth/token", {
+      method: "GET",
+      cache: "no-store",
+      credentials: "include",
+      signal: controller.signal,
+    });
+    if (!res.ok) return null;
+    const payload = (await res.json().catch(() => null)) as { token?: string | null } | null;
+    const token = payload?.token;
+    return typeof token === "string" && token.length > 0 ? token : null;
   } catch {
-    // Non-fatal: let backend return 401 if token resolution fails.
-    console.warn(`[api] token resolution failed for ${path}`);
     return null;
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+async function resolveAccessToken(path: string): Promise<string | null> {
+  const cached = readCachedAccessToken();
+  if (cached) return cached;
+
+  const getter = _getToken ?? (await waitForTokenGetter());
+  if (getter) {
+    try {
+      const token = await Promise.race<string | null>([
+        getter(),
+        new Promise<string | null>((resolve) => {
+          setTimeout(() => resolve(null), TOKEN_RESOLVE_TIMEOUT_MS);
+        }),
+      ]);
+      if (token) {
+        cacheAccessToken(token);
+        return token;
+      }
+    } catch {
+      // Non-fatal: try server fallback below.
+      console.warn(`[api] token getter failed for ${path}`);
+    }
+  }
+
+  // Fallback: obtain token server-side via Clerk auth() in a Next route.
+  const serverToken = await fetchServerAccessToken();
+  if (serverToken) {
+    cacheAccessToken(serverToken);
+    return serverToken;
+  }
+
+  return null;
 }
 
 const AI_PATHS = ["/ai/chat", "/ai/portfolio-insights", "/ai/dashboard-recommendations", "/ai/news-summary"];

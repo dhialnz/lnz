@@ -40,7 +40,8 @@ const NAV_ITEMS: Array<{ href: string; label: string; icon: IconName }> = [
   { href: "/settings", label: "Settings", icon: "settings" },
 ];
 
-const CLERK_SIGN_IN_URL = "/sign-in";
+const CLERK_SIGN_IN_URL =
+  process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL || "/sign-in";
 
 function IconGlyph({ name, active }: { name: IconName; active: boolean }) {
   const stroke = active ? "#FF5C00" : "#6B6B70";
