@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { MouseEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { UserButton, useClerk } from "@clerk/nextjs";
+import { SignOutButton, UserButton } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
 import { useCurrency } from "@/lib/currency";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -67,7 +67,6 @@ function IconGlyph({ name, active }: { name: IconName; active: boolean }) {
 export function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { signOut } = useClerk();
   const { currency, setCurrency, usdPerCad, rateLoading } = useCurrency();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [authMe, setAuthMe] = useState<AuthMe | null>(null);
@@ -155,18 +154,20 @@ export function Layout({ children }: { children: React.ReactNode }) {
     setAiPrewarm(readAIPrewarmState());
   };
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
     if (logoutBusy) return;
     setLogoutBusy(true);
     try {
       clearAIPipelineState();
       setAiPrewarm(readAIPrewarmState());
       setAuthMe(null);
-      await signOut({ redirectUrl: "/sign-in" });
     } catch {
-      window.location.assign("/sign-in");
+      // Non-fatal; continue to Clerk sign-out.
     } finally {
-      setLogoutBusy(false);
+      // If Clerk sign-out redirect fails for any reason, avoid a permanently disabled button.
+      window.setTimeout(() => {
+        setLogoutBusy(false);
+      }, 5000);
     }
   };
 
@@ -369,14 +370,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   </div>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => void handleLogout()}
-                disabled={logoutBusy}
-                className="mt-2 w-full rounded-md border border-border px-2 py-1.5 text-[11px] font-mono text-muted transition hover:bg-white/[0.03] hover:text-white disabled:opacity-50"
-              >
-                {logoutBusy ? "Logging out..." : "Log out"}
-              </button>
+              <SignOutButton redirectUrl="/sign-in">
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  disabled={logoutBusy}
+                  className="mt-2 w-full rounded-md border border-border px-2 py-1.5 text-[11px] font-mono text-muted transition hover:bg-white/[0.03] hover:text-white disabled:opacity-50"
+                >
+                  {logoutBusy ? "Logging out..." : "Log out"}
+                </button>
+              </SignOutButton>
               <p className="mt-2 text-[10px] text-muted font-semibold text-amber-500/80">
                 ! Not financial advice.
               </p>
