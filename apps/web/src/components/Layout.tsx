@@ -165,7 +165,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
       const signOutResult = await Promise.race<string>([
         signOut({ redirectUrl: "/sign-in" }).then(() => "done"),
-        new Promise((resolve) => window.setTimeout(() => resolve("timeout"), 5000)),
+        new Promise<string>((resolve) => window.setTimeout(() => resolve("timeout"), 5000)),
       ]);
 
       if (signOutResult === "timeout") {
