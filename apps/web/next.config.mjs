@@ -24,14 +24,14 @@ const nextConfig = {
             value: [
               "default-src 'self'",
               // Next.js dev requires 'unsafe-eval'; remove in prod if using a standalone build
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-              "style-src 'self' 'unsafe-inline'",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.clerk.accounts.dev https://*.accounts.dev https://api.clerk.com",
+              "style-src 'self' 'unsafe-inline' https://*.clerk.accounts.dev https://*.accounts.dev",
               // Clerk session/token calls require external connectivity.
               "connect-src 'self' https://api.clerk.com https://*.clerk.accounts.dev https://*.accounts.dev",
               // Clerk widgets/challenges may render in iframes depending on flow.
               "frame-src 'self' https://*.clerk.accounts.dev https://*.accounts.dev https://challenges.cloudflare.com",
               "img-src 'self' data: blob: https:",
-              "font-src 'self'",
+              "font-src 'self' https: data:",
               "frame-ancestors 'none'",
             ].join("; "),
           },

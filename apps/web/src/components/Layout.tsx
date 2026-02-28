@@ -70,7 +70,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { signOut } = useClerk();
-  const { isLoaded: clerkIsLoaded } = useAuth();
+  const { isLoaded: clerkIsLoaded, isSignedIn } = useAuth();
   const { currency, setCurrency, usdPerCad, rateLoading } = useCurrency();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [authMe, setAuthMe] = useState<AuthMe | null>(null);
@@ -97,9 +97,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // Only fetch once Clerk has validated the session — guarantees a token
-    // is available so /auth/me doesn't get a spurious 401.
+    // Only fetch /auth/me once Clerk has validated a signed-in session.
     if (!clerkIsLoaded) return;
+    if (!isSignedIn) {
+      setAuthMe(null);
+      return;
+    }
 
     let cancelled = false;
 
@@ -124,7 +127,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [clerkIsLoaded]);
+  }, [clerkIsLoaded, isSignedIn]);
 
   useEffect(() => {
     setMobileMenuOpen(false);

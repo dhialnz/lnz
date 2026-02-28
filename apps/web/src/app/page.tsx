@@ -535,7 +535,7 @@ export default function DashboardPage() {
   const { fromCad, currencyLabel } = useCurrency();
   // Wait for Clerk to finish initializing before making any API calls.
   // This prevents 401s caused by getToken() returning null on cold load.
-  const { isLoaded: clerkIsLoaded } = useAuth();
+  const { isLoaded: clerkIsLoaded, isSignedIn } = useAuth();
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [series, setSeries] = useState<PortfolioSeriesRow[]>([]);
   const [rulebook, setRulebook] = useState<Rulebook | null>(null);
@@ -754,8 +754,13 @@ export default function DashboardPage() {
   // returns a real JWT rather than null, eliminating cold-start 401s.
   useEffect(() => {
     if (!clerkIsLoaded) return;
+    if (!isSignedIn) {
+      setLoading(false);
+      setError("Not signed in. Please sign in to load your dashboard.");
+      return;
+    }
     void load();
-  }, [load, clerkIsLoaded]);
+  }, [load, clerkIsLoaded, isSignedIn]);
 
   const handleRunRules = async () => {
     setRunningRules(true);
@@ -832,12 +837,19 @@ export default function DashboardPage() {
   }
 
   if (error || !summary || !rulebook) {
+    const needsSignIn = (error ?? "").toLowerCase().includes("not signed in");
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-4">
         <p className="text-muted font-mono text-sm">{error ?? "No portfolio data found."}</p>
-        <Link href="/import" className="text-accent font-mono text-sm hover:underline">
-          Import your portfolio
-        </Link>
+        {needsSignIn ? (
+          <Link href="/sign-in" className="text-accent font-mono text-sm hover:underline">
+            Sign in
+          </Link>
+        ) : (
+          <Link href="/import" className="text-accent font-mono text-sm hover:underline">
+            Import your portfolio
+          </Link>
+        )}
       </div>
     );
   }
