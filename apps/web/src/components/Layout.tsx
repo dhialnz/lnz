@@ -74,6 +74,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const { currency, setCurrency, usdPerCad, rateLoading } = useCurrency();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [authMe, setAuthMe] = useState<AuthMe | null>(null);
+  const [authSyncing, setAuthSyncing] = useState(false);
   const [logoutBusy, setLogoutBusy] = useState(false);
   const [aiPrewarm, setAiPrewarm] = useState<AIPrewarmState>({
     epoch: 0,
@@ -96,36 +97,46 @@ export function Layout({ children }: { children: React.ReactNode }) {
     return unsubscribe;
   }, []);
 
-  useEffect(() => {
+    useEffect(() => {
     // Only fetch /auth/me once Clerk has validated a signed-in session.
     if (!clerkIsLoaded) return;
     if (!isSignedIn) {
       setAuthMe(null);
+      setAuthSyncing(false);
       return;
     }
 
     let cancelled = false;
+    let inFlight = false;
+    let retryTimer: number | null = null;
 
-    const loadAuthMe = async (attempt = 0) => {
+    const loadAuthMe = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      if (!cancelled) setAuthSyncing(true);
       try {
         const me = await getAuthMe();
         if (!cancelled) setAuthMe(me);
       } catch {
-        if (!cancelled && attempt < 3) {
-          window.setTimeout(() => void loadAuthMe(attempt + 1), 800);
-          return;
+        // Keep previous auth state and retry until session/token settles.
+        if (!cancelled) {
+          retryTimer = window.setTimeout(() => void loadAuthMe(), 2000);
         }
-        // Silently leave authMe as null — the Clerk middleware handles
-        // truly unauthenticated sessions. Do NOT redirect here: that
-        // creates a redirect loop on cold start when the token is briefly
-        // unavailable even though the user is signed in.
-        if (!cancelled) setAuthMe(null);
+      } finally {
+        inFlight = false;
+        if (!cancelled) setAuthSyncing(false);
       }
     };
 
     void loadAuthMe();
+    const pollId = window.setInterval(() => {
+      void loadAuthMe();
+    }, 30000);
+
     return () => {
       cancelled = true;
+      if (retryTimer) window.clearTimeout(retryTimer);
+      window.clearInterval(pollId);
     };
   }, [clerkIsLoaded, isSignedIn]);
 
@@ -142,13 +153,19 @@ export function Layout({ children }: { children: React.ReactNode }) {
     return "AI Partial";
   }, [aiPrewarm.ai_enabled, aiPrewarm.completed, aiPrewarm.started, aiReadyCount]);
   const aiProgressPct = Math.min(100, Math.max(0, Math.round((aiReadyCount / 3) * 100)));
-  const tierLabel = (authMe?.tier ?? "observer").toUpperCase();
+  const tierLabel = authMe?.tier
+    ? authMe.tier.toUpperCase()
+    : isSignedIn
+      ? "SYNC"
+      : "OBSERVER";
   const tierClassName =
     authMe?.tier === "command"
       ? "border-accent/40 bg-accent/10 text-accent"
       : authMe?.tier === "analyst"
         ? "border-positive/30 bg-positive/10 text-positive"
-        : "border-border bg-white/[0.03] text-muted";
+        : isSignedIn
+          ? "border-border bg-white/[0.03] text-neutral"
+          : "border-border bg-white/[0.03] text-muted";
 
   const handleStartPipeline = async () => {
     if (aiPipelineBusy) return;
@@ -377,7 +394,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 />
                 <div className="min-w-0">
                   <p className="truncate text-xs text-white">
-                    {authMe?.display_name || authMe?.email || "Not signed in"}
+                    {authMe?.display_name || authMe?.email || (isSignedIn ? "Signed in" : "Not signed in")}
                   </p>
                   <div
                     className={cn(
@@ -456,3 +473,4 @@ export function Layout({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
+
