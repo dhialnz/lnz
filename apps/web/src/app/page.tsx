@@ -656,6 +656,11 @@ export default function DashboardPage() {
     setError(null);
     setAiError(null);
     setAiStatusReady(false);
+    const hardStopId = window.setTimeout(() => {
+      if (requestId !== loadRequestRef.current) return;
+      setError("Dashboard load timed out. Please refresh and sign in again.");
+      setLoading(false);
+    }, 35_000);
 
     const pause = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
     const withTimeout = <T,>(promise: Promise<T>, ms: number, message: string): Promise<T> =>
@@ -736,6 +741,8 @@ export default function DashboardPage() {
       if (requestId !== loadRequestRef.current) return;
       setError(err instanceof Error ? err.message : "Failed to load dashboard");
       setLoading(false);
+    } finally {
+      window.clearTimeout(hardStopId);
     }
   }, [generateAIRecommendations]);
 
