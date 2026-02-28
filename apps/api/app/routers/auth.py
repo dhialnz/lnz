@@ -6,6 +6,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -55,7 +56,7 @@ async def clerk_webhook(
     # Verify Svix webhook signature when secret is configured.
     if settings.CLERK_WEBHOOK_SECRET:
         try:
-            from svix.webhooks import Webhook, WebhookVerificationError  # type: ignore[import]
+            from svix.webhooks import Webhook  # type: ignore[import]
 
             wh = Webhook(settings.CLERK_WEBHOOK_SECRET)
             headers = {
@@ -68,7 +69,10 @@ async def clerk_webhook(
             logger.warning("Webhook signature verification failed: %s", exc)
             raise HTTPException(status_code=400, detail="Invalid webhook signature.")
 
-    event = json.loads(body)
+    try:
+        event = json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid webhook payload.") from exc
     event_type = event.get("type")
     data = event.get("data", {})
 
@@ -79,6 +83,15 @@ async def clerk_webhook(
         first = (data.get("first_name") or "").strip()
         last = (data.get("last_name") or "").strip()
         display_name = f"{first} {last}".strip() or None
+
+        existing = db.query(User).filter(User.clerk_id == clerk_id).first()
+        if existing:
+            # Idempotent replay: update profile fields and return success.
+            existing.email = email
+            existing.display_name = display_name
+            db.commit()
+            logger.info("Webhook replay user.created ignored: clerk_id=%s", clerk_id)
+            return {"status": "ok", "idempotent": True}
 
         # If no real users exist yet (only SYSTEM placeholder), this is the admin.
         real_user_count = db.query(User).filter(User.clerk_id != "SYSTEM").count()
@@ -108,7 +121,26 @@ async def clerk_webhook(
         else:
             logger.info("New user created: clerk_id=%s email=%s tier=observer", clerk_id, email)
 
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            # Safe fallback for concurrent delivery races.
+            db.rollback()
+            logger.info("Webhook race ignored for clerk_id=%s", clerk_id)
+            return {"status": "ok", "idempotent": True}
+
+    elif event_type == "user.updated":
+        clerk_id = data.get("id", "")
+        user = db.query(User).filter(User.clerk_id == clerk_id).first()
+        if user:
+            email_addrs = data.get("email_addresses") or []
+            email = email_addrs[0].get("email_address") if email_addrs else None
+            first = (data.get("first_name") or "").strip()
+            last = (data.get("last_name") or "").strip()
+            user.email = email
+            user.display_name = f"{first} {last}".strip() or None
+            db.commit()
+            logger.info("User updated from webhook: clerk_id=%s", clerk_id)
 
     elif event_type == "user.deleted":
         clerk_id = data.get("id", "")
