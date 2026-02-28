@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 import {
   getAIDashboardRecommendations,
   getAIStatus,
@@ -108,12 +109,6 @@ const NEGATIVE_NEWS_WORDS = [
   "pressure",
   "volatility",
 ];
-const DEFAULT_CLERK_SIGN_IN_URL =
-  "https://elegant-moose-18.accounts.dev/sign-in?redirect_url=https%3A%2F%2Fapp.alphenzi.com%2F";
-const CLERK_SIGN_IN_URL =
-  process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL ?? DEFAULT_CLERK_SIGN_IN_URL;
-const AUTH_FAILURE_PATTERN =
-  /(missing authorization header|invalid token|missing authorization|user not registered|unauthorized|forbidden|api error 401|api error 403|\b401\b|\b403\b)/i;
 
 type RecommendationSource = "Rules" | "AI";
 type DashboardChartId = "value" | "drawdown" | "alpha" | "volatility";
@@ -538,6 +533,9 @@ function pressureLevel(score: number): RiskPressureLevel {
 
 export default function DashboardPage() {
   const { fromCad, currencyLabel } = useCurrency();
+  // Wait for Clerk to finish initializing before making any API calls.
+  // This prevents 401s caused by getToken() returning null on cold load.
+  const { isLoaded: clerkIsLoaded } = useAuth();
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [series, setSeries] = useState<PortfolioSeriesRow[]>([]);
   const [rulebook, setRulebook] = useState<Rulebook | null>(null);
@@ -745,21 +743,19 @@ export default function DashboardPage() {
       })();
     } catch (err) {
       if (requestId !== loadRequestRef.current) return;
-      const message = err instanceof Error ? err.message : "Failed to load dashboard";
-      if (AUTH_FAILURE_PATTERN.test(message)) {
-        window.location.assign(CLERK_SIGN_IN_URL);
-        return;
-      }
-      setError(message);
+      setError(err instanceof Error ? err.message : "Failed to load dashboard");
       setLoading(false);
     } finally {
       window.clearTimeout(hardStopId);
     }
   }, [generateAIRecommendations]);
 
+  // Only fire after Clerk has validated the session — guarantees getToken()
+  // returns a real JWT rather than null, eliminating cold-start 401s.
   useEffect(() => {
+    if (!clerkIsLoaded) return;
     void load();
-  }, [load]);
+  }, [load, clerkIsLoaded]);
 
   const handleRunRules = async () => {
     setRunningRules(true);

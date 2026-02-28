@@ -7,14 +7,19 @@ import { setApiTokenGetter } from "@/lib/api";
 /**
  * Bridges Clerk's getToken() into the plain api.ts module so every
  * request automatically gets an Authorization: Bearer <jwt> header.
- * Renders nothing — mount this once inside ClerkProvider.
+ *
+ * Waits until Clerk has finished initializing (isLoaded) before
+ * registering the getter — this prevents API calls from firing before
+ * the session is validated, which would produce transient 401s.
  */
 export function ClerkApiSync() {
-  const { getToken } = useAuth();
+  const { getToken, isLoaded } = useAuth();
 
   useEffect(() => {
-    setApiTokenGetter(() => getToken());
-  }, [getToken]);
+    if (isLoaded) {
+      setApiTokenGetter(() => getToken());
+    }
+  }, [getToken, isLoaded]);
 
   return null;
 }

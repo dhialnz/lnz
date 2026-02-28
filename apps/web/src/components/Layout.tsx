@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { MouseEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { UserButton, useClerk } from "@clerk/nextjs";
+import { UserButton, useAuth, useClerk } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
 import { useCurrency } from "@/lib/currency";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -44,8 +44,6 @@ const DEFAULT_CLERK_SIGN_IN_URL =
   "https://elegant-moose-18.accounts.dev/sign-in?redirect_url=https%3A%2F%2Fapp.alphenzi.com%2F";
 const CLERK_SIGN_IN_URL =
   process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL ?? DEFAULT_CLERK_SIGN_IN_URL;
-const AUTH_FAILURE_PATTERN =
-  /(missing authorization header|invalid token|missing authorization|user not registered|unauthorized|forbidden|api error 401|api error 403|\b401\b|\b403\b)/i;
 
 function IconGlyph({ name, active }: { name: IconName; active: boolean }) {
   const stroke = active ? "#FF5C00" : "#6B6B70";
@@ -75,6 +73,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { signOut } = useClerk();
+  const { isLoaded: clerkIsLoaded } = useAuth();
   const { currency, setCurrency, usdPerCad, rateLoading } = useCurrency();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [authMe, setAuthMe] = useState<AuthMe | null>(null);
@@ -101,31 +100,26 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Only fetch once Clerk has validated the session — guarantees a token
+    // is available so /auth/me doesn't get a spurious 401.
+    if (!clerkIsLoaded) return;
+
     let cancelled = false;
 
     const loadAuthMe = async (attempt = 0) => {
       try {
         const me = await getAuthMe();
-        if (!cancelled) {
-          setAuthMe(me);
-        }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "";
-        const isAuthFailure = AUTH_FAILURE_PATTERN.test(message);
-
-        if (!cancelled && attempt < 2) {
-          window.setTimeout(() => {
-            void loadAuthMe(attempt + 1);
-          }, 500);
+        if (!cancelled) setAuthMe(me);
+      } catch {
+        if (!cancelled && attempt < 3) {
+          window.setTimeout(() => void loadAuthMe(attempt + 1), 800);
           return;
         }
-
-        if (!cancelled) {
-          setAuthMe(null);
-          if (isAuthFailure && window.location.pathname !== "/sign-in") {
-            window.location.assign(CLERK_SIGN_IN_URL);
-          }
-        }
+        // Silently leave authMe as null — the Clerk middleware handles
+        // truly unauthenticated sessions. Do NOT redirect here: that
+        // creates a redirect loop on cold start when the token is briefly
+        // unavailable even though the user is signed in.
+        if (!cancelled) setAuthMe(null);
       }
     };
 
@@ -133,7 +127,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [clerkIsLoaded]);
 
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -398,7 +392,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <button
                 type="button"
                 onClick={() => void handleLogout()}
-                disabled={logoutBusy || !authMe}
+                disabled={logoutBusy}
                 className="mt-2 w-full rounded-md border border-border px-2 py-1.5 text-[11px] font-mono text-muted transition hover:bg-white/[0.03] hover:text-white disabled:opacity-50"
               >
                 {logoutBusy ? "Logging out..." : "Log out"}

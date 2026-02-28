@@ -34,7 +34,7 @@ const BASE_URL = "/api/v1";
 // should complete much faster.
 const DEFAULT_TIMEOUT_MS = 45_000;
 const AI_TIMEOUT_MS = 90_000;
-const TOKEN_GETTER_WAIT_MS = 1_500;
+const TOKEN_GETTER_WAIT_MS = 4_000;
 const TOKEN_RESOLVE_TIMEOUT_MS = 5_000;
 
 // Clerk token getter — injected by ClerkApiSync on mount so this plain module
@@ -97,6 +97,12 @@ async function request<T>(
     clearTimeout(timer);
     if (!res.ok) {
       const detail = await res.json().catch(() => ({ detail: res.statusText }));
+      // Clerk cold-start can transiently yield 401/403 for a moment while
+      // token/session state settles. Retry GET once before surfacing an error.
+      if (_retries > 0 && [401, 403].includes(res.status) && method === "GET") {
+        await new Promise((r) => setTimeout(r, 500));
+        return request<T>(path, init, _retries - 1);
+      }
       // Retry once on transient upstream/rate-limit errors.
       if (_retries > 0 && [408, 429, 502, 503, 504].includes(res.status) && method === "GET") {
         const retryAfterHeader = res.headers.get("Retry-After");
