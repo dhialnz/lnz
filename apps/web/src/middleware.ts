@@ -3,8 +3,8 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 const isPublic = createRouteMatcher([
   "/sign-in(.*)",
   "/sign-up(.*)",
-  // Allow health-check paths to skip auth
-  "/api/v1/health(.*)",
+  // Backend API routes (including Clerk webhook) must bypass frontend auth middleware.
+  "/api/v1/(.*)",
 ]);
 
 export default clerkMiddleware((auth, req) => {
