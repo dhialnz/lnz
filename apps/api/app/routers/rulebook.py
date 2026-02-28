@@ -13,15 +13,21 @@ from app.schemas.rulebook import (
     RulebookUpdate,
 )
 from app.services.auth_service import get_current_user
+from app.services.portfolio_scope import require_active_portfolio_id
 
 router = APIRouter(prefix="/rulebook", tags=["rulebook"])
 
 
-def _get_or_create(db: Session, user_id) -> Rulebook:
-    rb = db.query(Rulebook).filter(Rulebook.user_id == user_id).first()
+def _get_or_create(db: Session, user_id, portfolio_id) -> Rulebook:
+    rb = (
+        db.query(Rulebook)
+        .filter(Rulebook.user_id == user_id, Rulebook.portfolio_id == portfolio_id)
+        .first()
+    )
     if rb is None:
         rb = Rulebook(
             user_id=user_id,
+            portfolio_id=portfolio_id,
             thresholds=DEFAULT_THRESHOLDS.copy(),
             text=DEFAULT_RULE_TEXT,
         )
@@ -103,7 +109,8 @@ def get_rulebook(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    return _get_or_create(db, user.id)
+    portfolio_id = require_active_portfolio_id(user)
+    return _get_or_create(db, user.id, portfolio_id)
 
 
 @router.put("", response_model=RulebookOut)
@@ -112,7 +119,8 @@ def update_rulebook(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    rb = _get_or_create(db, user.id)
+    portfolio_id = require_active_portfolio_id(user)
+    rb = _get_or_create(db, user.id, portfolio_id)
     if payload.thresholds is not None:
         if payload.replace_thresholds:
             rb.thresholds = payload.thresholds

@@ -1,8 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { getMarketSnapshot, refreshMarketSnapshot } from "@/lib/api";
-import type { MarketSnapshot } from "@/lib/types";
+import { useEffect, useMemo, useState } from "react";
+import {
+  activatePortfolio,
+  createPortfolio,
+  deletePortfolio,
+  downloadWeeklyPdfReport,
+  getAuthMe,
+  getMarketSnapshot,
+  getPortfolios,
+  refreshMarketSnapshot,
+} from "@/lib/api";
+import type { AuthMe, MarketSnapshot, PortfolioInfo } from "@/lib/types";
 import { fmtDate } from "@/lib/utils";
 
 export default function SettingsPage() {
@@ -10,10 +19,41 @@ export default function SettingsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [authMe, setAuthMe] = useState<AuthMe | null>(null);
+  const [portfolios, setPortfolios] = useState<PortfolioInfo[]>([]);
+  const [portfoliosLoading, setPortfoliosLoading] = useState(false);
+  const [portfolioActionBusy, setPortfolioActionBusy] = useState(false);
+  const [newPortfolioName, setNewPortfolioName] = useState("");
+  const [portfolioMessage, setPortfolioMessage] = useState<string | null>(null);
+
+  const [downloadingReport, setDownloadingReport] = useState(false);
+
+  const tier = authMe?.tier ?? "observer";
+  const isCommand = tier === "command";
+  const activePortfolio = useMemo(
+    () => portfolios.find((p) => p.is_active) ?? null,
+    [portfolios],
+  );
+
+  const loadAuthAndPortfolios = async () => {
+    try {
+      const me = await getAuthMe();
+      setAuthMe(me);
+      setPortfoliosLoading(true);
+      const rows = await getPortfolios();
+      setPortfolios(rows);
+    } catch (err) {
+      setPortfolioMessage(err instanceof Error ? err.message : "Failed loading account info.");
+    } finally {
+      setPortfoliosLoading(false);
+    }
+  };
+
   useEffect(() => {
     getMarketSnapshot()
       .then(setSnapshot)
       .catch(() => setSnapshot(null));
+    void loadAuthAndPortfolios();
   }, []);
 
   const handleRefresh = async () => {
@@ -29,18 +69,211 @@ export default function SettingsPage() {
     }
   };
 
+  const handleCreatePortfolio = async () => {
+    const name = newPortfolioName.trim();
+    if (!name) {
+      setPortfolioMessage("Portfolio name cannot be empty.");
+      return;
+    }
+    setPortfolioActionBusy(true);
+    setPortfolioMessage(null);
+    try {
+      await createPortfolio(name);
+      setNewPortfolioName("");
+      await loadAuthAndPortfolios();
+      setPortfolioMessage(`Portfolio "${name}" created.`);
+    } catch (err) {
+      setPortfolioMessage(err instanceof Error ? err.message : "Create failed");
+    } finally {
+      setPortfolioActionBusy(false);
+    }
+  };
+
+  const handleActivatePortfolio = async (portfolioId: string, portfolioName: string) => {
+    setPortfolioActionBusy(true);
+    setPortfolioMessage(null);
+    try {
+      await activatePortfolio(portfolioId);
+      await loadAuthAndPortfolios();
+      setPortfolioMessage(`Active portfolio set to "${portfolioName}".`);
+    } catch (err) {
+      setPortfolioMessage(err instanceof Error ? err.message : "Activate failed");
+    } finally {
+      setPortfolioActionBusy(false);
+    }
+  };
+
+  const handleDeletePortfolio = async (portfolioId: string, portfolioName: string) => {
+    const ok = window.confirm(
+      `Delete portfolio "${portfolioName}"? This removes access to its stored rows.`,
+    );
+    if (!ok) return;
+    setPortfolioActionBusy(true);
+    setPortfolioMessage(null);
+    try {
+      await deletePortfolio(portfolioId);
+      await loadAuthAndPortfolios();
+      setPortfolioMessage(`Portfolio "${portfolioName}" deleted.`);
+    } catch (err) {
+      setPortfolioMessage(err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setPortfolioActionBusy(false);
+    }
+  };
+
+  const handleDownloadWeeklyPdf = async () => {
+    setDownloadingReport(true);
+    setPortfolioMessage(null);
+    try {
+      const blob = await downloadWeeklyPdfReport();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "alphenzi-weekly-report.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setPortfolioMessage("Weekly report downloaded.");
+    } catch (err) {
+      setPortfolioMessage(err instanceof Error ? err.message : "Report download failed.");
+    } finally {
+      setDownloadingReport(false);
+    }
+  };
+
   const p = snapshot?.payload;
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="max-w-3xl space-y-6">
       <div>
         <h1 className="text-4xl leading-none font-serif tracking-tight text-white">Settings</h1>
         <p className="text-xs font-mono text-muted mt-0.5">
-          Data provider configuration and market snapshot.
+          Tier access, multi-portfolio controls, and market snapshot.
         </p>
       </div>
 
-      {/* Market snapshot */}
+      <div className="bg-panel border border-border rounded-xl p-5 space-y-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h2 className="text-sm font-semibold text-gray-100">Subscription Tier</h2>
+          <span className="rounded-md border border-accent/40 bg-accent/10 px-2 py-1 text-xs font-mono text-accent">
+            {(tier || "observer").toUpperCase()}
+          </span>
+        </div>
+
+        <div className="text-xs font-mono text-muted space-y-1">
+          <p>`observer`: core portfolio tools, no AI endpoints.</p>
+          <p>`analyst`: observer + AI endpoints.</p>
+          <p>`command`: analyst + multi-portfolio + weekly PDF export.</p>
+        </div>
+
+        <p className="text-xs text-muted">
+          Current active portfolio:{" "}
+          <span className="font-mono text-neutral">
+            {activePortfolio?.name ?? authMe?.active_portfolio_id ?? "Not set"}
+          </span>
+        </p>
+      </div>
+
+      <div className="bg-panel border border-border rounded-xl p-5 space-y-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h2 className="text-sm font-semibold text-gray-100">Command Features</h2>
+          <button
+            onClick={() => void handleDownloadWeeklyPdf()}
+            disabled={!isCommand || downloadingReport}
+            className="text-xs font-mono bg-accent/10 hover:bg-accent/20 text-accent border border-accent/30 rounded px-3 py-1.5 transition-colors disabled:opacity-50"
+          >
+            {downloadingReport ? "Generating PDF..." : "Download Weekly PDF"}
+          </button>
+        </div>
+
+        {!isCommand ? (
+          <div className="rounded-lg border border-border bg-[#101013] px-3 py-2">
+            <p className="text-xs font-mono text-muted">
+              Command tier required for multi-portfolio and PDF export.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex gap-2">
+              <input
+                value={newPortfolioName}
+                onChange={(e) => setNewPortfolioName(e.target.value)}
+                placeholder="New portfolio name"
+                maxLength={120}
+                className="flex-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-white outline-none focus:border-accent"
+              />
+              <button
+                onClick={() => void handleCreatePortfolio()}
+                disabled={portfolioActionBusy || !newPortfolioName.trim()}
+                className="rounded-lg border border-accent/30 bg-accent/10 px-3 py-2 text-xs font-mono text-accent transition hover:bg-accent/20 disabled:opacity-50"
+              >
+                Create
+              </button>
+            </div>
+
+            {portfoliosLoading ? (
+              <p className="text-xs font-mono text-muted">Loading portfolios...</p>
+            ) : (
+              <div className="space-y-2">
+                {portfolios.map((portfolio) => (
+                  <div
+                    key={portfolio.id}
+                    className="rounded-lg border border-border bg-[#101013] px-3 py-2"
+                  >
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div>
+                        <p className="text-sm text-white">{portfolio.name}</p>
+                        <div className="mt-1 flex items-center gap-2 text-[10px] font-mono text-muted">
+                          {portfolio.is_default ? (
+                            <span className="rounded border border-border px-1.5 py-0.5">DEFAULT</span>
+                          ) : null}
+                          {portfolio.is_active ? (
+                            <span className="rounded border border-positive/40 bg-positive/10 px-1.5 py-0.5 text-positive">
+                              ACTIVE
+                            </span>
+                          ) : null}
+                          <span>Created {fmtDate(portfolio.created_at)}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        {!portfolio.is_active ? (
+                          <button
+                            onClick={() =>
+                              void handleActivatePortfolio(portfolio.id, portfolio.name)
+                            }
+                            disabled={portfolioActionBusy}
+                            className="rounded-md border border-accent/30 bg-accent/10 px-2.5 py-1 text-[11px] font-mono text-accent transition hover:bg-accent/20 disabled:opacity-50"
+                          >
+                            Activate
+                          </button>
+                        ) : null}
+                        {!portfolio.is_default ? (
+                          <button
+                            onClick={() =>
+                              void handleDeletePortfolio(portfolio.id, portfolio.name)
+                            }
+                            disabled={portfolioActionBusy}
+                            className="rounded-md border border-negative/30 bg-negative/10 px-2.5 py-1 text-[11px] font-mono text-negative transition hover:bg-negative/20 disabled:opacity-50"
+                          >
+                            Delete
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {portfolioMessage ? (
+          <p className="text-xs font-mono text-muted">{portfolioMessage}</p>
+        ) : null}
+      </div>
+
       <div className="bg-panel border border-border rounded-xl p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-100">Market Snapshot</h2>
@@ -49,13 +282,11 @@ export default function SettingsPage() {
             disabled={refreshing}
             className="text-xs font-mono bg-accent/10 hover:bg-accent/20 text-accent border border-accent/30 rounded px-3 py-1.5 transition-colors disabled:opacity-50"
           >
-            {refreshing ? "Refreshing…" : "↻ Refresh"}
+            {refreshing ? "Refreshing..." : "Refresh"}
           </button>
         </div>
 
-        {error && (
-          <p className="text-xs font-mono text-negative">{error}</p>
-        )}
+        {error ? <p className="text-xs font-mono text-negative">{error}</p> : null}
 
         {p ? (
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -70,7 +301,7 @@ export default function SettingsPage() {
               <div key={String(label)} className="bg-surface border border-border rounded p-3">
                 <p className="text-xs font-mono text-muted">{label}</p>
                 <p className="text-sm font-mono font-semibold text-gray-100 mt-0.5">
-                  {value != null ? Number(value).toFixed(2) : "—"}
+                  {value != null ? Number(value).toFixed(2) : "-"}
                 </p>
               </div>
             ))}
@@ -81,48 +312,11 @@ export default function SettingsPage() {
           </p>
         )}
 
-        {snapshot && (
+        {snapshot ? (
           <p className="text-xs font-mono text-muted">
-            Provider: {p?._provider ?? "—"} · Captured: {fmtDate(snapshot.captured_at)}
+            Provider: {p?._provider ?? "-"} | Captured: {fmtDate(snapshot.captured_at)}
           </p>
-        )}
-
-        {p?.sectors && Object.keys(p.sectors).length > 0 && (
-          <div>
-            <p className="text-xs font-mono text-muted uppercase tracking-wider mb-2">
-              Sector ETFs
-            </p>
-            <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
-              {Object.entries(p.sectors).map(([ticker, price]) => (
-                <div key={ticker} className="bg-surface border border-border rounded p-2 flex justify-between items-center">
-                  <span className="text-xs font-mono text-accent">{ticker}</span>
-                  <span className="text-xs font-mono text-gray-200">{Number(price).toFixed(2)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Provider config */}
-      <div className="bg-panel border border-border rounded-xl p-5 space-y-4">
-        <h2 className="text-sm font-semibold text-gray-100">Data Provider Config</h2>
-        <p className="text-xs font-mono text-muted">
-          API keys and provider selection are configured via environment variables — never stored in the database.
-        </p>
-        <div className="bg-surface border border-border rounded p-4 text-xs font-mono text-gray-300 space-y-2">
-          <p className="text-muted"># In your .env file:</p>
-          <p>MARKET_DATA_PROVIDER=<span className="text-accent">mock</span> | http</p>
-          <p>MARKET_DATA_BASE_URL=<span className="text-accent">https://your-provider.com</span></p>
-          <p>MARKET_DATA_API_KEY=<span className="text-accent">sk-...</span></p>
-          <p className="mt-2 text-muted"># News:</p>
-          <p>NEWS_PROVIDER=<span className="text-accent">mock</span> | http</p>
-          <p>NEWS_BASE_URL=<span className="text-accent">https://your-news-api.com</span></p>
-          <p>NEWS_API_KEY=<span className="text-accent">...</span></p>
-        </div>
-        <p className="text-xs font-mono text-muted">
-          See README for instructions on adding a custom provider adapter.
-        </p>
+        ) : null}
       </div>
     </div>
   );

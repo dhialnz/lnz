@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models.user import User
+from app.services.portfolio_scope import ensure_active_portfolio
 
 logger = logging.getLogger("lnz.auth")
 
@@ -104,6 +105,7 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)) -> U
             status_code=401,
             detail="User not registered. Sign up and wait for account creation.",
         )
+    ensure_active_portfolio(db, user)
     return user
 
 
@@ -121,4 +123,14 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
     """Dependency: requires is_admin=True."""
     if not user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required.")
+    return user
+
+
+def require_command(user: User = Depends(get_current_user)) -> User:
+    """Dependency: requires command tier."""
+    if user.tier != "command":
+        raise HTTPException(
+            status_code=403,
+            detail="This feature requires the Command tier.",
+        )
     return user

@@ -336,6 +336,19 @@ export interface AuthMe {
   display_name: string | null;
   tier: "observer" | "analyst" | "command";
   is_admin: boolean;
+  active_portfolio_id?: string | null;
+}
+
+export interface PortfolioInfo {
+  id: string;
+  name: string;
+  is_default: boolean;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface PortfolioActivateResult {
+  active_portfolio_id: string;
 }
 
 export interface AIChatMessage {

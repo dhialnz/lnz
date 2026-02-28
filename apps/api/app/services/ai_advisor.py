@@ -1059,20 +1059,35 @@ async def _validate_and_enrich_recommendations_with_yahoo(
     return enriched[:10]
 
 
-async def build_ai_context(db: Session, user_id: uuid.UUID) -> dict[str, Any]:
-    holdings_snapshot = await get_holdings_for_user(db=db, user_id=user_id)
+async def build_ai_context(
+    db: Session,
+    user_id: uuid.UUID,
+    portfolio_id: uuid.UUID,
+) -> dict[str, Any]:
+    holdings_snapshot = await get_holdings_for_user(
+        db=db,
+        user_id=user_id,
+        portfolio_id=portfolio_id,
+    )
     holdings = holdings_snapshot.holdings
 
     series_rows = (
         db.query(PortfolioSeries)
-        .filter(PortfolioSeries.user_id == user_id)
+        .filter(
+            PortfolioSeries.user_id == user_id,
+            PortfolioSeries.portfolio_id == portfolio_id,
+        )
         .order_by(PortfolioSeries.date)
         .all()
     )
     summary = _build_portfolio_summary(series_rows)
     series_tail = _series_tail(series_rows)
 
-    rulebook = db.query(Rulebook).filter(Rulebook.user_id == user_id).first()
+    rulebook = (
+        db.query(Rulebook)
+        .filter(Rulebook.user_id == user_id, Rulebook.portfolio_id == portfolio_id)
+        .first()
+    )
     thresholds = dict((rulebook.thresholds if rulebook else {}) or {})
     risk_profile = _risk_profile_from_thresholds(thresholds)
 

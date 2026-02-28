@@ -12,6 +12,7 @@ from app.models.user import User
 from app.schemas.recommendations import RecommendationOut
 from app.services import metrics, regime, rules
 from app.services.auth_service import get_current_user
+from app.services.portfolio_scope import require_active_portfolio_id
 
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 
@@ -22,9 +23,13 @@ def get_recommendations(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    portfolio_id = require_active_portfolio_id(user)
     return (
         db.query(Recommendation)
-        .filter(Recommendation.user_id == user.id)
+        .filter(
+            Recommendation.user_id == user.id,
+            Recommendation.portfolio_id == portfolio_id,
+        )
         .order_by(Recommendation.created_at.desc())
         .limit(limit)
         .all()
@@ -36,10 +41,14 @@ def run_recommendations(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    portfolio_id = require_active_portfolio_id(user)
     """Recompute metrics and re-run rule engine. Stores new recommendations."""
     rows = (
         db.query(PortfolioSeries)
-        .filter(PortfolioSeries.user_id == user.id)
+        .filter(
+            PortfolioSeries.user_id == user.id,
+            PortfolioSeries.portfolio_id == portfolio_id,
+        )
         .order_by(PortfolioSeries.date)
         .all()
     )
@@ -67,7 +76,11 @@ def run_recommendations(
 
     regime_name, _ = regime.classify_regime(df)
 
-    rb = db.query(Rulebook).filter(Rulebook.user_id == user.id).first()
+    rb = (
+        db.query(Rulebook)
+        .filter(Rulebook.user_id == user.id, Rulebook.portfolio_id == portfolio_id)
+        .first()
+    )
     thresholds = rb.thresholds if rb else DEFAULT_THRESHOLDS
 
     recs_dicts = rules.run_rule_engine(df, regime_name, thresholds)
@@ -75,6 +88,7 @@ def run_recommendations(
     for r in recs_dicts:
         rec = Recommendation(
             user_id=user.id,
+            portfolio_id=portfolio_id,
             title=r["title"],
             risk_level=r["risk_level"],
             category=r["category"],

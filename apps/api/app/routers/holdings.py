@@ -23,6 +23,7 @@ from app.schemas.holdings import (
 )
 from app.services import yahoo_quotes
 from app.services.auth_service import get_current_user
+from app.services.portfolio_scope import require_active_portfolio_id
 
 router = APIRouter(prefix="/holdings", tags=["holdings"])
 logger = logging.getLogger("lnz.holdings")
@@ -172,9 +173,18 @@ def _compute_sharpe_sortino(
     )
 
 
-async def get_holdings_for_user(db: Session, user_id: uuid.UUID) -> HoldingsSnapshot:
+async def get_holdings_for_user(
+    db: Session,
+    user_id: uuid.UUID,
+    portfolio_id: uuid.UUID,
+) -> HoldingsSnapshot:
     """Core holdings logic — callable directly from ai_advisor without FastAPI DI."""
-    rows = db.query(Holding).filter(Holding.user_id == user_id).order_by(Holding.added_at).all()
+    rows = (
+        db.query(Holding)
+        .filter(Holding.user_id == user_id, Holding.portfolio_id == portfolio_id)
+        .order_by(Holding.added_at)
+        .all()
+    )
 
     if not rows:
         return HoldingsSnapshot(
@@ -413,7 +423,8 @@ async def get_holdings(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> HoldingsSnapshot:
-    return await get_holdings_for_user(db, user.id)
+    portfolio_id = require_active_portfolio_id(user)
+    return await get_holdings_for_user(db, user.id, portfolio_id)
 
 
 @router.get("/ticker-suggestions", response_model=list[TickerSuggestion])
@@ -453,6 +464,7 @@ async def add_holding(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> HoldingOut:
+    portfolio_id = require_active_portfolio_id(user)
     ticker = _validate_ticker(payload.ticker)
     if payload.shares <= 0:
         raise HTTPException(status_code=422, detail="Shares must be > 0.")
@@ -470,6 +482,7 @@ async def add_holding(
 
     holding = Holding(
         user_id=user.id,
+        portfolio_id=portfolio_id,
         ticker=ticker,
         name=name,
         shares=payload.shares,
@@ -491,6 +504,7 @@ def update_holding(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> HoldingOut:
+    portfolio_id = require_active_portfolio_id(user)
     ticker = _validate_ticker(payload.ticker)
     if payload.shares <= 0:
         raise HTTPException(status_code=422, detail="Shares must be > 0.")
@@ -498,7 +512,9 @@ def update_holding(
         raise HTTPException(status_code=422, detail="Average cost per share must be > 0.")
 
     row = db.query(Holding).filter(
-        Holding.id == holding_id, Holding.user_id == user.id
+        Holding.id == holding_id,
+        Holding.user_id == user.id,
+        Holding.portfolio_id == portfolio_id,
     ).first()
     if not row:
         raise HTTPException(status_code=404, detail="Holding not found.")
@@ -519,8 +535,11 @@ def delete_holding(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
+    portfolio_id = require_active_portfolio_id(user)
     row = db.query(Holding).filter(
-        Holding.id == holding_id, Holding.user_id == user.id
+        Holding.id == holding_id,
+        Holding.user_id == user.id,
+        Holding.portfolio_id == portfolio_id,
     ).first()
     if not row:
         raise HTTPException(status_code=404, detail="Holding not found.")

@@ -23,6 +23,7 @@ from app.services.ai_advisor import (
     resolve_ai_provider,
 )
 from app.services.auth_service import get_current_user, require_analyst
+from app.services.portfolio_scope import require_active_portfolio_id
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -42,7 +43,8 @@ async def get_portfolio_insights(
     db: Session = Depends(get_db),
     user: User = Depends(require_analyst),
 ) -> PortfolioInsightsOut:
-    context = await build_ai_context(db, user.id)
+    portfolio_id = require_active_portfolio_id(user)
+    context = await build_ai_context(db, user.id, portfolio_id)
     payload = await generate_portfolio_insights(context)
     return PortfolioInsightsOut(**payload)
 
@@ -53,7 +55,8 @@ async def ai_chat(
     db: Session = Depends(get_db),
     user: User = Depends(require_analyst),
 ) -> AIChatOut:
-    context = await build_ai_context(db, user.id)
+    portfolio_id = require_active_portfolio_id(user)
+    context = await build_ai_context(db, user.id, portfolio_id)
     history = [m.model_dump() for m in payload.history]
     data = await chat_with_portfolio(context, payload.message, history)
     return AIChatOut(**data)
@@ -64,7 +67,8 @@ async def get_dashboard_recommendations(
     db: Session = Depends(get_db),
     user: User = Depends(require_analyst),
 ) -> AIDashboardRecommendationsOut:
-    context = await build_ai_context(db, user.id)
+    portfolio_id = require_active_portfolio_id(user)
+    context = await build_ai_context(db, user.id, portfolio_id)
     payload = await generate_dashboard_recommendations(context)
     return AIDashboardRecommendationsOut(**payload)
 
@@ -74,6 +78,7 @@ async def get_news_summary(
     db: Session = Depends(get_db),
     user: User = Depends(require_analyst),
 ) -> AINewsSummaryOut:
-    context = await build_ai_context(db, user.id)
+    portfolio_id = require_active_portfolio_id(user)
+    context = await build_ai_context(db, user.id, portfolio_id)
     payload = await generate_news_summary(context)
     return AINewsSummaryOut(**payload)

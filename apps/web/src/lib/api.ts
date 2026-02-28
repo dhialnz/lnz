@@ -20,6 +20,8 @@
   NewsEvent,
   NewsPortfolioImpact,
   ParsePreview,
+  PortfolioActivateResult,
+  PortfolioInfo,
   PortfolioSeriesRow,
   PortfolioSummary,
   Recommendation,
@@ -194,6 +196,48 @@ export async function syncSpyHistory(): Promise<SpyHistorySyncResult> {
   return request<SpyHistorySyncResult>("/portfolio/sync-spy-history", {
     method: "POST",
   });
+}
+
+export async function getPortfolios(): Promise<PortfolioInfo[]> {
+  return request<PortfolioInfo[]>("/portfolios");
+}
+
+export async function createPortfolio(name: string): Promise<PortfolioInfo> {
+  return request<PortfolioInfo>("/portfolios", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function activatePortfolio(
+  portfolioId: string,
+): Promise<PortfolioActivateResult> {
+  return request<PortfolioActivateResult>(`/portfolios/${portfolioId}/activate`, {
+    method: "POST",
+  });
+}
+
+export async function deletePortfolio(portfolioId: string): Promise<void> {
+  await request<{ deleted: boolean }>(`/portfolios/${portfolioId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function downloadWeeklyPdfReport(): Promise<Blob> {
+  const path = "/reports/weekly.pdf";
+  const token = await resolveAccessToken(path);
+  const headers: Record<string, string> = token
+    ? { Authorization: `Bearer ${token}` }
+    : {};
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: "GET",
+    headers,
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(detail?.detail ?? `Report error ${res.status}`);
+  }
+  return res.blob();
 }
 
 // â”€â”€â”€ Recommendations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

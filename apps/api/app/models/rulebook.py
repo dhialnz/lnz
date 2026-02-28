@@ -50,6 +50,9 @@ class Rulebook(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
     )
+    portfolio_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("portfolios.id"), nullable=False, index=True
+    )
     thresholds: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=lambda: DEFAULT_THRESHOLDS.copy()
     )

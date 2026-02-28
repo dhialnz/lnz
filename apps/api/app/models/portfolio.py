@@ -12,13 +12,20 @@ from app.database import Base
 
 class PortfolioSeries(Base):
     __tablename__ = "portfolio_series"
-    __table_args__ = (UniqueConstraint("user_id", "date", name="uq_portfolio_series_user_date"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "portfolio_id", "date", name="uq_portfolio_series_user_portfolio_date"
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+    )
+    portfolio_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("portfolios.id"), nullable=False, index=True
     )
     date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
 
@@ -53,6 +60,9 @@ class PortfolioImport(Base):
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+    )
+    portfolio_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("portfolios.id"), nullable=False, index=True
     )
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     uploaded_at: Mapped[datetime] = mapped_column(

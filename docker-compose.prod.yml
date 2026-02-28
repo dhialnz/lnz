@@ -105,7 +105,13 @@ services:
     # No source volume mounts — uses image's built code
     # Build + start in a single command so the container is self-contained
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:3000 || exit 1"]
+      # Treat any non-5xx HTTP response as healthy; auth redirects/401s are expected
+      # on protected routes when probing without a session.
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"const http=require('http');const req=http.get('http://127.0.0.1:3000/sign-in',res=>process.exit(res.statusCode>=200&&res.statusCode<500?0:1));req.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),4000);\"",
+        ]
       interval: 20s
       timeout: 5s
       retries: 5

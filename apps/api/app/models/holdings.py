@@ -19,6 +19,9 @@ class Holding(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
     )
+    portfolio_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("portfolios.id"), nullable=False, index=True
+    )
     ticker: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     shares: Mapped[float] = mapped_column(Numeric(18, 6), nullable=False)

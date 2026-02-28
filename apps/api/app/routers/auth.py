@@ -91,12 +91,14 @@ def _verify_svix_signature(
 
 @router.get("/me")
 def get_me(user: User = Depends(get_current_user)) -> dict:
+    # get_current_user already ensures active portfolio, but this keeps response explicit.
     return {
         "clerk_id": user.clerk_id,
         "email": user.email,
         "display_name": user.display_name,
         "tier": user.tier,
         "is_admin": user.is_admin,
+        "active_portfolio_id": str(user.active_portfolio_id) if user.active_portfolio_id else None,
     }
 
 

@@ -10,7 +10,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.routers import ai, auth, fx, health, holdings, market, news, portfolio, recommendations, rulebook
+from app.routers import (
+    ai,
+    auth,
+    fx,
+    health,
+    holdings,
+    market,
+    news,
+    portfolio,
+    portfolios,
+    recommendations,
+    reports,
+    rulebook,
+)
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -67,15 +80,23 @@ async def authenticate(request: Request, call_next) -> Response:  # type: ignore
     """Optional single-user API key gate. Only active when LNZ_API_KEY is set."""
     key = settings.LNZ_API_KEY
     if key and not request.url.path.endswith("/health"):
-        provided = (
-            request.headers.get("X-API-Key", "")
-            or request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+        auth_header = request.headers.get("Authorization", "").strip()
+        has_clerk_bearer = bool(
+            settings.CLERK_ISSUER
+            and auth_header.startswith("Bearer ")
+            and request.headers.get("X-API-Key", "").strip() == ""
         )
-        if provided != key:
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Unauthorized. Provide a valid X-API-Key header."},
+        # Multi-user auth uses Clerk Bearer JWTs; let route dependencies verify them.
+        if not has_clerk_bearer:
+            provided = (
+                request.headers.get("X-API-Key", "").strip()
+                or auth_header.removeprefix("Bearer ").strip()
             )
+            if provided != key:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Unauthorized. Provide a valid X-API-Key header."},
+                )
     return await call_next(request)
 
 
@@ -129,6 +150,8 @@ app.include_router(rulebook.router, prefix=API_PREFIX)
 app.include_router(holdings.router, prefix=API_PREFIX)
 app.include_router(fx.router, prefix=API_PREFIX)
 app.include_router(ai.router, prefix=API_PREFIX)
+app.include_router(portfolios.router, prefix=API_PREFIX)
+app.include_router(reports.router, prefix=API_PREFIX)
 
 
 @app.get("/", include_in_schema=False)

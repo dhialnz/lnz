@@ -18,6 +18,7 @@ from app.schemas.market import (
     NewsPortfolioImpactOut,
 )
 from app.services.auth_service import get_current_user
+from app.services.portfolio_scope import require_active_portfolio_id
 from app.services import news as news_service
 from app.services.news_impact import aggregate_top_impacted, impact_for_event
 
@@ -123,8 +124,13 @@ async def ingest_news(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    portfolio_id = require_active_portfolio_id(user)
     if not entities:
-        holdings_snapshot = await get_holdings_for_user(db=db, user_id=user.id)
+        holdings_snapshot = await get_holdings_for_user(
+            db=db,
+            user_id=user.id,
+            portfolio_id=portfolio_id,
+        )
         entities = _news_entities_from_holdings(holdings_snapshot)
     try:
         items = await news_service.fetch_news(entities=entities)
@@ -142,7 +148,12 @@ async def get_portfolio_news_impact(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    holdings_snapshot = await get_holdings_for_user(db=db, user_id=user.id)
+    portfolio_id = require_active_portfolio_id(user)
+    holdings_snapshot = await get_holdings_for_user(
+        db=db,
+        user_id=user.id,
+        portfolio_id=portfolio_id,
+    )
     holdings = holdings_snapshot.holdings
 
     if refresh:
