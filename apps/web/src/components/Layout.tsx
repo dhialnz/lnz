@@ -102,11 +102,23 @@ export function Layout({ children }: { children: React.ReactNode }) {
         if (!cancelled) {
           setAuthMe(me);
         }
-      } catch {
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "";
+        const isAuthFailure =
+          /missing authorization header|invalid token|missing authorization|user not registered/i.test(message);
+
         if (!cancelled && attempt < 2) {
           window.setTimeout(() => {
             void loadAuthMe(attempt + 1);
           }, 500);
+          return;
+        }
+
+        if (!cancelled) {
+          setAuthMe(null);
+          if (isAuthFailure && window.location.pathname !== "/sign-in") {
+            window.location.assign("/sign-in");
+          }
         }
       }
     };
@@ -365,7 +377,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 />
                 <div className="min-w-0">
                   <p className="truncate text-xs text-white">
-                    {authMe?.display_name || authMe?.email || "Signed in"}
+                    {authMe?.display_name || authMe?.email || "Not signed in"}
                   </p>
                   <div
                     className={cn(
@@ -380,7 +392,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <button
                 type="button"
                 onClick={() => void handleLogout()}
-                disabled={logoutBusy}
+                disabled={logoutBusy || !authMe}
                 className="mt-2 w-full rounded-md border border-border px-2 py-1.5 text-[11px] font-mono text-muted transition hover:bg-white/[0.03] hover:text-white disabled:opacity-50"
               >
                 {logoutBusy ? "Logging out..." : "Log out"}

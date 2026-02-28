@@ -739,7 +739,12 @@ export default function DashboardPage() {
       })();
     } catch (err) {
       if (requestId !== loadRequestRef.current) return;
-      setError(err instanceof Error ? err.message : "Failed to load dashboard");
+      const message = err instanceof Error ? err.message : "Failed to load dashboard";
+      if (/missing authorization header|invalid token|missing authorization|user not registered/i.test(message)) {
+        window.location.assign("/sign-in");
+        return;
+      }
+      setError(message);
       setLoading(false);
     } finally {
       window.clearTimeout(hardStopId);
