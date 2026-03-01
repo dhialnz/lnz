@@ -24,10 +24,10 @@ const nextConfig = {
             value: [
               "default-src 'self'",
               // Next.js dev requires 'unsafe-eval'; remove in prod if using a standalone build
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.clerk.accounts.dev https://*.accounts.dev https://api.clerk.com https://clerk.app.alphenzi.com https://accounts.app.alphenzi.com",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.clerk.accounts.dev https://*.accounts.dev https://api.clerk.com https://clerk.app.alphenzi.com https://accounts.app.alphenzi.com https://challenges.cloudflare.com",
               "style-src 'self' 'unsafe-inline' https://*.clerk.accounts.dev https://*.accounts.dev https://clerk.app.alphenzi.com https://accounts.app.alphenzi.com",
               // Clerk session/token calls require external connectivity.
-              "connect-src 'self' https://api.clerk.com https://*.clerk.accounts.dev https://*.accounts.dev https://clerk.app.alphenzi.com https://accounts.app.alphenzi.com",
+              "connect-src 'self' https://api.clerk.com https://*.clerk.accounts.dev https://*.accounts.dev https://clerk.app.alphenzi.com https://accounts.app.alphenzi.com https://challenges.cloudflare.com",
               // Clerk widgets/challenges may render in iframes depending on flow.
               "frame-src 'self' https://*.clerk.accounts.dev https://*.accounts.dev https://clerk.app.alphenzi.com https://accounts.app.alphenzi.com https://challenges.cloudflare.com",
               "img-src 'self' data: blob: https:",
