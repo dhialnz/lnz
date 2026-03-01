@@ -32,6 +32,10 @@ _IMPORTANT_NEWS_LIMIT = 12
 _LLM_HOLDINGS_LIMIT = 12
 _LLM_NEWS_LIMIT = 10
 _RECOMMENDATION_TICKER_LIMIT = 32
+_MAX_COPILOT_SUGGESTIONS = 14
+_MAX_DASHBOARD_RECS = 10
+_MIN_BUY_CANDIDATES = 2
+_MIN_WATCHLIST_TICKERS = 3
 _TICKER_PATTERN = re.compile(r"\b[A-Z]{2,5}(?:\.[A-Z]{1,2})?\b")
 _TICKER_STOPWORDS = {
     "BUY",
@@ -859,6 +863,194 @@ def _recommendation_intent(rec: dict[str, Any]) -> str:
     return "neutral"
 
 
+def _suggestion_action(row: dict[str, Any]) -> str:
+    return str(row.get("action") or "").strip().lower()
+
+
+def _suggestion_ticker(row: dict[str, Any]) -> str:
+    return str(row.get("ticker") or "").strip().upper()
+
+
+def _recommendation_ticker(rec: dict[str, Any]) -> str:
+    metrics = rec.get("supporting_metrics")
+    if isinstance(metrics, dict):
+        validated = str(metrics.get("validated_ticker") or "").strip().upper()
+        if validated:
+            return validated
+    extracted = _extract_recommendation_tickers(rec)
+    return extracted[0] if extracted else ""
+
+
+def _trim_suggestions_with_buy_floor(
+    suggestions: list[dict[str, Any]],
+    *,
+    max_total: int,
+    min_buy: int,
+) -> list[dict[str, Any]]:
+    if len(suggestions) <= max_total:
+        return suggestions
+
+    selected = list(suggestions[:max_total])
+    buy_count = sum(1 for s in selected if _suggestion_action(s) == "buy")
+    if buy_count >= min_buy:
+        return selected
+
+    selected_buy_keys = {
+        (_suggestion_action(s), _suggestion_ticker(s))
+        for s in selected
+        if _suggestion_action(s) == "buy" and _suggestion_ticker(s)
+    }
+    for candidate in suggestions[max_total:]:
+        if _suggestion_action(candidate) != "buy":
+            continue
+        key = ("buy", _suggestion_ticker(candidate))
+        if key in selected_buy_keys:
+            continue
+        replace_idx = next(
+            (idx for idx in range(len(selected) - 1, -1, -1) if _suggestion_action(selected[idx]) != "buy"),
+            None,
+        )
+        if replace_idx is None:
+            break
+        selected[replace_idx] = candidate
+        selected_buy_keys.add(key)
+        buy_count += 1
+        if buy_count >= min_buy:
+            break
+    return selected
+
+
+def _ensure_min_buy_suggestions(
+    primary: list[dict[str, Any]],
+    fallback: list[dict[str, Any]],
+    *,
+    min_buy: int = _MIN_BUY_CANDIDATES,
+    max_total: int = _MAX_COPILOT_SUGGESTIONS,
+) -> list[dict[str, Any]]:
+    out = [dict(s) for s in primary if isinstance(s, dict)]
+    buy_count = sum(1 for s in out if _suggestion_action(s) == "buy")
+    if buy_count < min_buy:
+        existing_keys = {(_suggestion_action(s), _suggestion_ticker(s)) for s in out}
+        for row in fallback:
+            if not isinstance(row, dict):
+                continue
+            if _suggestion_action(row) != "buy":
+                continue
+            key = ("buy", _suggestion_ticker(row))
+            if key in existing_keys:
+                continue
+            out.append(dict(row))
+            existing_keys.add(key)
+            buy_count += 1
+            if buy_count >= min_buy:
+                break
+    return _trim_suggestions_with_buy_floor(out, max_total=max_total, min_buy=min_buy)
+
+
+def _ensure_min_watchlist_tickers(
+    primary: list[str],
+    suggestions: list[dict[str, Any]],
+    fallback: list[str],
+    *,
+    min_size: int = _MIN_WATCHLIST_TICKERS,
+    max_size: int = 12,
+) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+
+    def _push(token: str) -> None:
+        ticker = str(token or "").strip().upper()
+        if not ticker or ticker in seen:
+            return
+        seen.add(ticker)
+        merged.append(ticker)
+
+    for token in primary:
+        _push(token)
+    for suggestion in suggestions:
+        if _suggestion_action(suggestion) != "buy":
+            continue
+        _push(_suggestion_ticker(suggestion))
+    if len(merged) < min_size:
+        for token in fallback:
+            _push(token)
+            if len(merged) >= min_size:
+                break
+    return merged[:max_size]
+
+
+def _trim_recommendations_with_buy_floor(
+    recs: list[dict[str, Any]],
+    *,
+    max_total: int,
+    min_buy: int,
+) -> list[dict[str, Any]]:
+    if len(recs) <= max_total:
+        return recs
+
+    selected = list(recs[:max_total])
+    buy_count = sum(1 for r in selected if _recommendation_intent(r) == "buy")
+    if buy_count >= min_buy:
+        return selected
+
+    selected_buy_tickers = {
+        _recommendation_ticker(r)
+        for r in selected
+        if _recommendation_intent(r) == "buy" and _recommendation_ticker(r)
+    }
+    for candidate in recs[max_total:]:
+        if _recommendation_intent(candidate) != "buy":
+            continue
+        ticker = _recommendation_ticker(candidate)
+        if ticker and ticker in selected_buy_tickers:
+            continue
+        replace_idx = next(
+            (idx for idx in range(len(selected) - 1, -1, -1) if _recommendation_intent(selected[idx]) != "buy"),
+            None,
+        )
+        if replace_idx is None:
+            break
+        selected[replace_idx] = candidate
+        if ticker:
+            selected_buy_tickers.add(ticker)
+        buy_count += 1
+        if buy_count >= min_buy:
+            break
+    return selected
+
+
+def _ensure_min_buy_recommendations(
+    primary: list[dict[str, Any]],
+    fallback: list[dict[str, Any]],
+    *,
+    min_buy: int = _MIN_BUY_CANDIDATES,
+    max_total: int = _MAX_DASHBOARD_RECS,
+) -> list[dict[str, Any]]:
+    out = [dict(r) for r in primary if isinstance(r, dict)]
+    buy_count = sum(1 for r in out if _recommendation_intent(r) == "buy")
+    if buy_count < min_buy:
+        existing_buy_tickers = {
+            _recommendation_ticker(r)
+            for r in out
+            if _recommendation_intent(r) == "buy" and _recommendation_ticker(r)
+        }
+        for row in fallback:
+            if not isinstance(row, dict):
+                continue
+            if _recommendation_intent(row) != "buy":
+                continue
+            ticker = _recommendation_ticker(row)
+            if ticker and ticker in existing_buy_tickers:
+                continue
+            out.append(dict(row))
+            if ticker:
+                existing_buy_tickers.add(ticker)
+            buy_count += 1
+            if buy_count >= min_buy:
+                break
+    return _trim_recommendations_with_buy_floor(out, max_total=max_total, min_buy=min_buy)
+
+
 def _format_pct(value: float | None, digits: int = 2) -> str:
     if not isinstance(value, (int, float)):
         return "n/a"
@@ -1342,7 +1534,12 @@ def _deterministic_suggestions(context: dict[str, Any]) -> list[dict[str, Any]]:
 
     action_rank = {"sell": 0, "hold": 1, "buy": 2}
     suggestions.sort(key=lambda x: (action_rank.get(x["action"], 9), -float(x["confidence"])))
-    return _apply_portfolio_fit_to_suggestions(context, suggestions[:14])
+    suggestions = _trim_suggestions_with_buy_floor(
+        suggestions,
+        max_total=_MAX_COPILOT_SUGGESTIONS,
+        min_buy=_MIN_BUY_CANDIDATES,
+    )
+    return _apply_portfolio_fit_to_suggestions(context, suggestions)
 
 
 def _deterministic_insights(context: dict[str, Any]) -> dict[str, Any]:
@@ -1912,6 +2109,20 @@ async def generate_portfolio_insights(context: dict[str, Any]) -> dict[str, Any]
             ("opportunity", "idea", "tailwind"),
         )
 
+        final_suggestions = _ensure_min_buy_suggestions(
+            clean_suggestions if clean_suggestions else baseline["suggestions"],
+            baseline["suggestions"],
+            min_buy=_MIN_BUY_CANDIDATES,
+            max_total=_MAX_COPILOT_SUGGESTIONS,
+        )
+        final_watchlist = _ensure_min_watchlist_tickers(
+            clean_watchlist,
+            final_suggestions,
+            baseline["watchlist"],
+            min_size=_MIN_WATCHLIST_TICKERS,
+            max_size=12,
+        )
+
         return {
             "generated_at": _utc_now(),
             "used_ai": True,
@@ -1919,8 +2130,8 @@ async def generate_portfolio_insights(context: dict[str, Any]) -> dict[str, Any]
             "summary": parsed_summary,
             "key_risks": parsed_key_risks[:6],
             "key_opportunities": parsed_key_opportunities[:6],
-            "suggestions": clean_suggestions or baseline["suggestions"],
-            "watchlist": clean_watchlist or baseline["watchlist"],
+            "suggestions": final_suggestions,
+            "watchlist": final_watchlist,
             "sources": baseline["sources"],
         }
     except Exception as exc:
@@ -2158,6 +2369,12 @@ async def generate_dashboard_recommendations(context: dict[str, Any]) -> dict[st
     baseline_recs = await _validate_and_enrich_recommendations_with_yahoo(baseline_raw)
     if not baseline_recs:
         baseline_recs = baseline_raw
+    baseline_recs = _ensure_min_buy_recommendations(
+        baseline_recs,
+        baseline_recs,
+        min_buy=_MIN_BUY_CANDIDATES,
+        max_total=_MAX_DASHBOARD_RECS,
+    )
 
     try:
         provider, _ = resolve_ai_provider()
@@ -2233,6 +2450,12 @@ async def generate_dashboard_recommendations(context: dict[str, Any]) -> dict[st
             recs = await _validate_and_enrich_recommendations_with_yahoo(recs_raw)
             if not recs:
                 recs = baseline_recs
+        recs = _ensure_min_buy_recommendations(
+            recs,
+            baseline_recs,
+            min_buy=_MIN_BUY_CANDIDATES,
+            max_total=_MAX_DASHBOARD_RECS,
+        )
         return {
             "generated_at": _utc_now(),
             "used_ai": True,
