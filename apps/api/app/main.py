@@ -13,6 +13,7 @@ from app.config import settings
 from app.routers import (
     ai,
     auth,
+    billing,
     fx,
     health,
     holdings,
@@ -79,7 +80,15 @@ app.add_middleware(
 async def authenticate(request: Request, call_next) -> Response:  # type: ignore[type-arg]
     """Optional single-user API key gate. Only active when LNZ_API_KEY is set."""
     key = settings.LNZ_API_KEY
-    if key and not request.url.path.endswith("/health"):
+    unauthenticated_webhook_paths = {
+        "/api/v1/auth/webhook",
+        "/api/v1/billing/webhook",
+    }
+    if (
+        key
+        and not request.url.path.endswith("/health")
+        and request.url.path not in unauthenticated_webhook_paths
+    ):
         auth_header = request.headers.get("Authorization", "").strip()
         has_clerk_bearer = bool(
             settings.CLERK_ISSUER
@@ -142,6 +151,7 @@ API_PREFIX = "/api/v1"
 
 app.include_router(health.router, prefix=API_PREFIX)
 app.include_router(auth.router, prefix=API_PREFIX)
+app.include_router(billing.router, prefix=API_PREFIX)
 app.include_router(portfolio.router, prefix=API_PREFIX)
 app.include_router(recommendations.router, prefix=API_PREFIX)
 app.include_router(market.router, prefix=API_PREFIX)

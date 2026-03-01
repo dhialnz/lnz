@@ -63,6 +63,12 @@ class Settings(BaseSettings):
     # CLERK_WEBHOOK_SECRET: whsec_... from Clerk dashboard → Webhooks
     CLERK_WEBHOOK_SECRET: str = ""
 
+    # ── Stripe billing ───────────────────────────────────────────────────────
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+    STRIPE_ANALYST_PRICE_ID: str = ""
+    STRIPE_COMMAND_PRICE_ID: str = ""
+
     # ── API explorer ─────────────────────────────────────────────────────────
     # Set to true in production to hide /docs and /redoc endpoints.
     HIDE_DOCS: bool = False

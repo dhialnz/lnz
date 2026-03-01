@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   activatePortfolio,
+  createBillingCheckoutSession,
+  createBillingPortalSession,
   createPortfolio,
   deletePortfolio,
   downloadWeeklyPdfReport,
@@ -21,6 +23,8 @@ export default function SettingsPage() {
   const [portfolioMessage, setPortfolioMessage] = useState<string | null>(null);
 
   const [downloadingReport, setDownloadingReport] = useState(false);
+  const [billingBusy, setBillingBusy] = useState(false);
+  const [billingMessage, setBillingMessage] = useState<string | null>(null);
 
   const tier = authMe?.tier ?? "observer";
   const isCommand = tier === "command";
@@ -120,6 +124,30 @@ export default function SettingsPage() {
     }
   };
 
+  const handleUpgrade = async (targetTier: "analyst" | "command") => {
+    setBillingBusy(true);
+    setBillingMessage(null);
+    try {
+      const { url } = await createBillingCheckoutSession(targetTier);
+      window.location.assign(url);
+    } catch (err) {
+      setBillingMessage(err instanceof Error ? err.message : "Unable to start checkout.");
+      setBillingBusy(false);
+    }
+  };
+
+  const handleManageBilling = async () => {
+    setBillingBusy(true);
+    setBillingMessage(null);
+    try {
+      const { url } = await createBillingPortalSession();
+      window.location.assign(url);
+    } catch (err) {
+      setBillingMessage(err instanceof Error ? err.message : "Unable to open billing portal.");
+      setBillingBusy(false);
+    }
+  };
+
   return (
     <div className="max-w-3xl space-y-6">
       <div>
@@ -149,6 +177,56 @@ export default function SettingsPage() {
             {activePortfolio?.name ?? authMe?.active_portfolio_id ?? "Not set"}
           </span>
         </p>
+      </div>
+
+      <div className="bg-panel border border-border rounded-xl p-5 space-y-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h2 className="text-sm font-semibold text-gray-100">Billing</h2>
+          <span className="text-[11px] font-mono text-muted uppercase">Stripe</span>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {tier === "observer" ? (
+            <>
+              <button
+                onClick={() => void handleUpgrade("analyst")}
+                disabled={billingBusy}
+                className="rounded-lg border border-accent/30 bg-accent/10 px-3 py-2 text-xs font-mono text-accent transition hover:bg-accent/20 disabled:opacity-50"
+              >
+                Upgrade to Analyst ($19/mo)
+              </button>
+              <button
+                onClick={() => void handleUpgrade("command")}
+                disabled={billingBusy}
+                className="rounded-lg border border-accent/30 bg-accent/10 px-3 py-2 text-xs font-mono text-accent transition hover:bg-accent/20 disabled:opacity-50"
+              >
+                Upgrade to Command ($49/mo)
+              </button>
+            </>
+          ) : null}
+
+          {tier === "analyst" ? (
+            <button
+              onClick={() => void handleUpgrade("command")}
+              disabled={billingBusy}
+              className="rounded-lg border border-accent/30 bg-accent/10 px-3 py-2 text-xs font-mono text-accent transition hover:bg-accent/20 disabled:opacity-50"
+            >
+              Upgrade to Command ($49/mo)
+            </button>
+          ) : null}
+
+          <button
+            onClick={() => void handleManageBilling()}
+            disabled={billingBusy}
+            className="rounded-lg border border-border bg-surface px-3 py-2 text-xs font-mono text-neutral transition hover:border-accent/40 hover:text-white disabled:opacity-50"
+          >
+            Manage Billing
+          </button>
+        </div>
+
+        {billingMessage ? (
+          <p className="text-xs font-mono text-muted">{billingMessage}</p>
+        ) : null}
       </div>
 
       <div className="bg-panel border border-border rounded-xl p-5 space-y-4">

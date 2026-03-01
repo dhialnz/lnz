@@ -489,6 +489,21 @@ export async function getAuthMe(): Promise<AuthMe> {
   return request<AuthMe>("/auth/me");
 }
 
+export async function createBillingCheckoutSession(
+  tier: "analyst" | "command",
+): Promise<{ url: string }> {
+  return request<{ url: string }>("/billing/checkout", {
+    method: "POST",
+    body: JSON.stringify({ tier }),
+  });
+}
+
+export async function createBillingPortalSession(): Promise<{ url: string }> {
+  return request<{ url: string }>("/billing/portal", {
+    method: "POST",
+  });
+}
+
 export async function getPortfolioInsights(): Promise<PortfolioInsights> {
   return request<PortfolioInsights>("/ai/portfolio-insights");
 }
