@@ -345,81 +345,93 @@ export async function startGlobalAIPrewarm(force = false): Promise<void> {
 
     const maxRounds = PIPELINE_MAX_ROUNDS;
     for (let round = 1; round <= maxRounds; round += 1) {
+      const stageTasks: Promise<void>[] = [];
+
       if (!dashboardReady) {
-        const dashboard = await withRetries(
-          () => requireAiOutput(() => getAIDashboardRecommendations(), "dashboard"),
-          PIPELINE_STAGE_RETRIES,
-          PIPELINE_RETRY_BASE_DELAY_MS,
-        );
-        if (dashboard.ok) {
-          writeLatestDashboardRecommendations(dashboard.value.recommendations, dashboard.value.model, epoch);
-          dashboardReady = true;
-          dashboardError = "";
-        } else {
-          dashboardError = dashboard.error;
-        }
-
-        const dashboardCached = readLatestDashboardRecommendations(epoch);
-        dashboardReady = Boolean(
-          dashboardCached &&
-            Array.isArray(dashboardCached.recommendations) &&
-            dashboardCached.recommendations.length > 0 &&
-            dashboardCached.model !== "deterministic-v1" &&
-            dashboardCached.model !== "rules-fallback",
-        );
-
-        if (!dashboardReady) {
-          const rulesFallback = await withRetries(() => getRecommendations(), 1, 600);
-          if (rulesFallback.ok && Array.isArray(rulesFallback.value) && rulesFallback.value.length > 0) {
-            writeLatestDashboardRecommendations(rulesFallback.value, "rules-fallback", epoch);
-          } else if (!rulesFallback.ok) {
-            dashboardError = `${dashboardError}; fallback: ${rulesFallback.error}`;
+        stageTasks.push((async () => {
+          const dashboard = await withRetries(
+            () => requireAiOutput(() => getAIDashboardRecommendations(), "dashboard"),
+            PIPELINE_STAGE_RETRIES,
+            PIPELINE_RETRY_BASE_DELAY_MS,
+          );
+          if (dashboard.ok) {
+            writeLatestDashboardRecommendations(dashboard.value.recommendations, dashboard.value.model, epoch);
+            dashboardReady = true;
+            dashboardError = "";
+          } else {
+            dashboardError = dashboard.error;
           }
-        }
+
+          const dashboardCached = readLatestDashboardRecommendations(epoch);
+          dashboardReady = Boolean(
+            dashboardCached &&
+              Array.isArray(dashboardCached.recommendations) &&
+              dashboardCached.recommendations.length > 0 &&
+              dashboardCached.model !== "deterministic-v1" &&
+              dashboardCached.model !== "rules-fallback",
+          );
+
+          if (!dashboardReady) {
+            const rulesFallback = await withRetries(() => getRecommendations(), 1, 600);
+            if (rulesFallback.ok && Array.isArray(rulesFallback.value) && rulesFallback.value.length > 0) {
+              writeLatestDashboardRecommendations(rulesFallback.value, "rules-fallback", epoch);
+            } else if (!rulesFallback.ok) {
+              dashboardError = `${dashboardError}; fallback: ${rulesFallback.error}`;
+            }
+          }
+        })());
       }
 
       if (!newsReady) {
-        const news = await withRetries(
-          () => requireAiOutput(() => getAINewsSummary(), "news"),
-          PIPELINE_STAGE_RETRIES,
-          PIPELINE_RETRY_BASE_DELAY_MS,
-        );
-        if (news.ok) {
-          writeLatestNewsSummary(news.value.summary, news.value.model, epoch);
-          newsReady = true;
-          newsError = "";
-        } else {
-          newsError = news.error;
-        }
-        const newsCached = readLatestNewsSummary(epoch);
-        newsReady = Boolean(
-          newsCached &&
-            typeof newsCached.text === "string" &&
-            newsCached.text.trim().length > 0 &&
-            newsCached.model !== "deterministic-v1",
-        );
+        stageTasks.push((async () => {
+          const news = await withRetries(
+            () => requireAiOutput(() => getAINewsSummary(), "news"),
+            PIPELINE_STAGE_RETRIES,
+            PIPELINE_RETRY_BASE_DELAY_MS,
+          );
+          if (news.ok) {
+            writeLatestNewsSummary(news.value.summary, news.value.model, epoch);
+            newsReady = true;
+            newsError = "";
+          } else {
+            newsError = news.error;
+          }
+          const newsCached = readLatestNewsSummary(epoch);
+          newsReady = Boolean(
+            newsCached &&
+              typeof newsCached.text === "string" &&
+              newsCached.text.trim().length > 0 &&
+              newsCached.model !== "deterministic-v1",
+          );
+        })());
       }
 
       if (!assistantReady) {
-        const assistant = await withRetries(
-          () => requireAiOutput(() => getPortfolioInsights(), "assistant"),
-          PIPELINE_STAGE_RETRIES,
-          PIPELINE_RETRY_BASE_DELAY_MS,
-        );
-        if (assistant.ok) {
-          writeLatestAssistantInsights(assistant.value, assistant.value.model, epoch);
-          assistantReady = true;
-          assistantError = "";
-        } else {
-          assistantError = assistant.error;
-        }
-        const assistantCached = readLatestAssistantInsights(epoch);
-        assistantReady = Boolean(
-          assistantCached &&
-            typeof assistantCached.summary === "string" &&
-            assistantCached.summary.trim().length > 0 &&
-            assistantCached.model !== "deterministic-v1",
-        );
+        stageTasks.push((async () => {
+          const assistant = await withRetries(
+            () => requireAiOutput(() => getPortfolioInsights(), "assistant"),
+            PIPELINE_STAGE_RETRIES,
+            PIPELINE_RETRY_BASE_DELAY_MS,
+          );
+          if (assistant.ok) {
+            writeLatestAssistantInsights(assistant.value, assistant.value.model, epoch);
+            assistantReady = true;
+            assistantError = "";
+          } else {
+            assistantError = assistant.error;
+          }
+          const assistantCached = readLatestAssistantInsights(epoch);
+          assistantReady = Boolean(
+            assistantCached &&
+              typeof assistantCached.summary === "string" &&
+              assistantCached.summary.trim().length > 0 &&
+              assistantCached.model !== "deterministic-v1",
+          );
+        })());
+      }
+
+      if (stageTasks.length > 0) {
+        await Promise.all(stageTasks);
       }
 
       patchState({

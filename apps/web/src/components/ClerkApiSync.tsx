@@ -19,10 +19,10 @@ export function ClerkApiSync() {
     if (!isLoaded) return;
     setApiTokenGetter(async () => {
       if (!isSignedIn) return null;
-      const token = await getToken();
+      const token = await getToken({ skipCache: true, leewayInSeconds: 150 });
       if (token) return token;
       await new Promise((resolve) => setTimeout(resolve, 150));
-      return getToken();
+      return getToken({ skipCache: true, leewayInSeconds: 150 });
     });
   }, [getToken, isLoaded, isSignedIn]);
 

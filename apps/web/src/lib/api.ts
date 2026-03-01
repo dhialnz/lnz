@@ -40,7 +40,7 @@ const TOKEN_GETTER_WAIT_MS = 4_000;
 const TOKEN_RESOLVE_TIMEOUT_MS = 5_000;
 const SERVER_TOKEN_TIMEOUT_MS = 4_000;
 const ACCESS_TOKEN_CACHE_MS = 20_000;
-const TOKEN_MIN_TTL_SEC = 30;
+const TOKEN_MIN_TTL_SEC = 90;
 
 // Clerk token getter — injected by ClerkApiSync on mount so this plain module
 // can attach Authorization headers without importing React/Clerk hooks.
@@ -91,13 +91,13 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
   }
 }
 
-function isTokenExpiringSoon(token: string): boolean {
+function isTokenExpiringSoon(token: string, minTtlSeconds = TOKEN_MIN_TTL_SEC): boolean {
   const payload = decodeJwtPayload(token);
   if (!payload) return false;
   const exp = payload.exp;
   if (typeof exp !== "number") return false;
   const nowSec = Math.floor(Date.now() / 1000);
-  return exp - nowSec <= TOKEN_MIN_TTL_SEC;
+  return exp - nowSec <= minTtlSeconds;
 }
 
 async function waitForTokenGetter(timeoutMs = TOKEN_GETTER_WAIT_MS): Promise<(() => Promise<string | null>) | null> {
@@ -129,9 +129,16 @@ async function fetchServerAccessToken(): Promise<string | null> {
   }
 }
 
-async function resolveAccessToken(path: string): Promise<string | null> {
-  const cached = readCachedAccessToken();
-  if (cached) return cached;
+function shouldPreferFreshToken(path: string): boolean {
+  return AI_PATHS.some((p) => path.startsWith(p));
+}
+
+async function resolveAccessToken(path: string, forceFresh = false): Promise<string | null> {
+  const preferFresh = forceFresh || shouldPreferFreshToken(path);
+  if (!preferFresh) {
+    const cached = readCachedAccessToken();
+    if (cached) return cached;
+  }
 
   const getter = _getToken ?? (await waitForTokenGetter());
   if (getter) {
@@ -143,7 +150,8 @@ async function resolveAccessToken(path: string): Promise<string | null> {
         }),
       ]);
       if (token) {
-        if (!isTokenExpiringSoon(token)) {
+        const minTtl = preferFresh ? 150 : TOKEN_MIN_TTL_SEC;
+        if (!isTokenExpiringSoon(token, minTtl)) {
           cacheAccessToken(token);
           return token;
         }
@@ -157,7 +165,8 @@ async function resolveAccessToken(path: string): Promise<string | null> {
   // Fallback: obtain token server-side via Clerk auth() in a Next route.
   const serverToken = await fetchServerAccessToken();
   if (serverToken) {
-    if (!isTokenExpiringSoon(serverToken)) {
+    const minTtl = preferFresh ? 150 : TOKEN_MIN_TTL_SEC;
+    if (!isTokenExpiringSoon(serverToken, minTtl)) {
       cacheAccessToken(serverToken);
       return serverToken;
     }
@@ -175,14 +184,15 @@ function getTimeoutMs(path: string): number {
 async function request<T>(
   path: string,
   init?: RequestInit,
-  _retries = 1,
+  _retries = 2,
+  _forceFreshToken = false,
 ): Promise<T> {
   const method = (init?.method ?? "GET").toUpperCase();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), getTimeoutMs(path));
 
   try {
-    const token = await resolveAccessToken(path);
+    const token = await resolveAccessToken(path, _forceFreshToken);
     const authHeader: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
     const res = await fetch(`${BASE_URL}${path}`, {
       cache: method === "GET" ? "no-store" : init?.cache,
@@ -203,12 +213,16 @@ async function request<T>(
           detailText.includes("missing auth token"));
       if (isAuthFailure) {
         clearCachedAccessToken();
+        if (_retries > 0 && method === "GET") {
+          await new Promise((r) => setTimeout(r, 300));
+          return request<T>(path, init, _retries - 1, true);
+        }
       }
       // Clerk cold-start can transiently yield 401/403 for a moment while
       // token/session state settles. Retry GET once before surfacing an error.
       if (_retries > 0 && [401, 403].includes(res.status) && method === "GET") {
         await new Promise((r) => setTimeout(r, 500));
-        return request<T>(path, init, _retries - 1);
+        return request<T>(path, init, _retries - 1, true);
       }
       // Retry once on transient upstream/rate-limit errors.
       if (_retries > 0 && [408, 429, 502, 503, 504].includes(res.status) && method === "GET") {
