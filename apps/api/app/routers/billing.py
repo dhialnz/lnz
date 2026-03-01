@@ -85,7 +85,19 @@ def _create_checkout_url(
     if not price_id:
         raise HTTPException(status_code=503, detail=f"Missing Stripe price id for tier '{tier}'.")
 
-    customer_id = _find_or_create_customer(user)
+    try:
+        customer_id = _find_or_create_customer(user)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Stripe customer lookup/create failed: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Stripe customer lookup failed. Verify STRIPE_SECRET_KEY is valid "
+                "for the current Stripe mode (test/live)."
+            ),
+        ) from exc
     base = _base_url_from_request(request)
 
     try:
@@ -113,7 +125,19 @@ def _create_checkout_url(
 def _create_portal_url(*, user: User, request: Request) -> str:
     _require_stripe_enabled()
 
-    customer_id = _find_or_create_customer(user)
+    try:
+        customer_id = _find_or_create_customer(user)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Stripe customer lookup/create failed: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Stripe customer lookup failed. Verify STRIPE_SECRET_KEY is valid "
+                "for the current Stripe mode (test/live)."
+            ),
+        ) from exc
     base = _base_url_from_request(request)
     try:
         session = stripe.billing_portal.Session.create(
