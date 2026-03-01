@@ -17,12 +17,19 @@ export function ClerkApiSync() {
 
   useEffect(() => {
     if (!isLoaded) return;
-    setApiTokenGetter(async () => {
+    setApiTokenGetter(async (options) => {
       if (!isSignedIn) return null;
-      const token = await getToken({ skipCache: true, leewayInSeconds: 150 });
+      const forceFresh = Boolean(options?.forceFresh);
+      const token = await getToken({
+        skipCache: forceFresh,
+        leewayInSeconds: forceFresh ? 30 : 10,
+      });
       if (token) return token;
       await new Promise((resolve) => setTimeout(resolve, 150));
-      return getToken({ skipCache: true, leewayInSeconds: 150 });
+      return getToken({
+        skipCache: true,
+        leewayInSeconds: 30,
+      });
     });
   }, [getToken, isLoaded, isSignedIn]);
 

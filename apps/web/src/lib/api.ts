@@ -40,15 +40,18 @@ const TOKEN_GETTER_WAIT_MS = 4_000;
 const TOKEN_RESOLVE_TIMEOUT_MS = 5_000;
 const SERVER_TOKEN_TIMEOUT_MS = 4_000;
 const ACCESS_TOKEN_CACHE_MS = 20_000;
-const TOKEN_MIN_TTL_SEC = 90;
+const TOKEN_MIN_TTL_SEC = 15;
 
 // Clerk token getter — injected by ClerkApiSync on mount so this plain module
 // can attach Authorization headers without importing React/Clerk hooks.
-let _getToken: (() => Promise<string | null>) | null = null;
+type TokenGetterOptions = { forceFresh?: boolean };
+let _getToken: ((options?: TokenGetterOptions) => Promise<string | null>) | null = null;
 let _cachedAccessToken: string | null = null;
 let _cachedAccessTokenAt = 0;
 
-export function setApiTokenGetter(fn: () => Promise<string | null>): void {
+export function setApiTokenGetter(
+  fn: (options?: TokenGetterOptions) => Promise<string | null>,
+): void {
   _getToken = fn;
 }
 
@@ -100,7 +103,9 @@ function isTokenExpiringSoon(token: string, minTtlSeconds = TOKEN_MIN_TTL_SEC): 
   return exp - nowSec <= minTtlSeconds;
 }
 
-async function waitForTokenGetter(timeoutMs = TOKEN_GETTER_WAIT_MS): Promise<(() => Promise<string | null>) | null> {
+async function waitForTokenGetter(
+  timeoutMs = TOKEN_GETTER_WAIT_MS,
+): Promise<((options?: TokenGetterOptions) => Promise<string | null>) | null> {
   const started = Date.now();
   while (!_getToken && Date.now() - started < timeoutMs) {
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -144,13 +149,13 @@ async function resolveAccessToken(path: string, forceFresh = false): Promise<str
   if (getter) {
     try {
       const token = await Promise.race<string | null>([
-        getter(),
+        getter({ forceFresh: preferFresh }),
         new Promise<string | null>((resolve) => {
           setTimeout(() => resolve(null), TOKEN_RESOLVE_TIMEOUT_MS);
         }),
       ]);
       if (token) {
-        const minTtl = preferFresh ? 150 : TOKEN_MIN_TTL_SEC;
+        const minTtl = preferFresh ? 30 : TOKEN_MIN_TTL_SEC;
         if (!isTokenExpiringSoon(token, minTtl)) {
           cacheAccessToken(token);
           return token;
@@ -165,7 +170,7 @@ async function resolveAccessToken(path: string, forceFresh = false): Promise<str
   // Fallback: obtain token server-side via Clerk auth() in a Next route.
   const serverToken = await fetchServerAccessToken();
   if (serverToken) {
-    const minTtl = preferFresh ? 150 : TOKEN_MIN_TTL_SEC;
+    const minTtl = preferFresh ? 30 : TOKEN_MIN_TTL_SEC;
     if (!isTokenExpiringSoon(serverToken, minTtl)) {
       cacheAccessToken(serverToken);
       return serverToken;
