@@ -282,6 +282,23 @@ export async function importExcel(
   return res.json();
 }
 
+export async function downloadImportTemplate(): Promise<Blob> {
+  const path = "/portfolio/template.xlsx";
+  const token = await resolveAccessToken(path);
+  const headers: Record<string, string> = token
+    ? { Authorization: `Bearer ${token}` }
+    : {};
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: "GET",
+    headers,
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(detail?.detail ?? `Template download error ${res.status}`);
+  }
+  return res.blob();
+}
+
 export async function clearImportedData(): Promise<ClearImportedDataResult> {
   return request<ClearImportedDataResult>("/portfolio/imported-data", {
     method: "DELETE",

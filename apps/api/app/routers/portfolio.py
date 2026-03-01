@@ -8,6 +8,7 @@ from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -144,6 +145,99 @@ def _fetch_spy_close_map_for_date_range(start_date, end_date) -> dict:
     return close_map
 
 
+def _derive_returns_and_benchmark(df):
+    """
+    Derive missing period_deposits, period_return and benchmark_return values.
+    Also fills spy_close from Yahoo SPY daily closes on-or-before each portfolio date.
+    """
+    import pandas as pd
+
+    out = df.sort_values("date").reset_index(drop=True).copy()
+    if out.empty:
+        raise HTTPException(status_code=422, detail="No rows found after parsing.")
+
+    if "net_deposits" not in out.columns:
+        out["net_deposits"] = 0.0
+    out["net_deposits"] = pd.to_numeric(out["net_deposits"], errors="coerce").fillna(0.0)
+
+    if "period_deposits" not in out.columns:
+        out["period_deposits"] = out["net_deposits"].diff()
+        out.loc[0, "period_deposits"] = float(out.loc[0, "net_deposits"])
+    else:
+        out["period_deposits"] = pd.to_numeric(out["period_deposits"], errors="coerce")
+        missing_pd = out["period_deposits"].isna()
+        computed_pd = out["net_deposits"].diff()
+        computed_pd.iloc[0] = float(out.loc[0, "net_deposits"])
+        out.loc[missing_pd, "period_deposits"] = computed_pd[missing_pd]
+
+    if "period_return" not in out.columns:
+        out["period_return"] = None
+    else:
+        out["period_return"] = pd.to_numeric(out["period_return"], errors="coerce")
+
+    # Compute period return where missing:
+    # r_t = (V_t - V_{t-1} - period_deposits_t) / V_{t-1}
+    if pd.isna(out.loc[0, "period_return"]):
+        out.loc[0, "period_return"] = 0.0
+    for i in range(1, len(out)):
+        if pd.isna(out.loc[i, "period_return"]):
+            prev_value = float(out.loc[i - 1, "total_value"])
+            if prev_value == 0:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Cannot derive period return for row {i + 2}: previous total value is zero.",
+                )
+            curr_value = float(out.loc[i, "total_value"])
+            deposits = float(out.loc[i, "period_deposits"])
+            out.loc[i, "period_return"] = (curr_value - prev_value - deposits) / prev_value
+
+    # Always fill SPY closes by date, using the last trading close on-or-before each date.
+    start_date = out["date"].min() - timedelta(days=7)
+    end_date = out["date"].max()
+    try:
+        close_map = _fetch_spy_close_map_for_date_range(start_date, end_date)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    trade_dates = sorted(close_map.keys())
+    if not trade_dates:
+        raise HTTPException(status_code=422, detail="No SPY close data returned for the imported date range.")
+
+    def close_on_or_before(target_date):
+        for d in reversed(trade_dates):
+            if d <= target_date:
+                return close_map[d]
+        return None
+
+    spy_closes: list[float] = []
+    for d in out["date"].tolist():
+        c = close_on_or_before(d)
+        if c is None:
+            raise HTTPException(status_code=422, detail=f"No SPY close available on or before {d}.")
+        spy_closes.append(float(c))
+    out["spy_close"] = spy_closes
+
+    if "benchmark_return" not in out.columns:
+        out["benchmark_return"] = None
+    else:
+        out["benchmark_return"] = pd.to_numeric(out["benchmark_return"], errors="coerce")
+
+    if pd.isna(out.loc[0, "benchmark_return"]):
+        out.loc[0, "benchmark_return"] = 0.0
+    for i in range(1, len(out)):
+        if pd.isna(out.loc[i, "benchmark_return"]):
+            prev_close = float(out.loc[i - 1, "spy_close"])
+            curr_close = float(out.loc[i, "spy_close"])
+            if prev_close == 0:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Cannot derive benchmark return for row {i + 2}: previous SPY close is zero.",
+                )
+            out.loc[i, "benchmark_return"] = (curr_close / prev_close) - 1.0
+
+    return out
+
+
 def _sync_spy_history_and_recompute(db: Session, user_id, portfolio_id) -> int:
     """Backfill spy_close, recompute benchmark_return from closes, and recompute all derived metrics."""
     import pandas as pd
@@ -243,10 +337,10 @@ async def import_excel(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
-    # Compute metrics
+    # Auto-derive simplified template fields (period/benchmark returns + SPY closes),
+    # then compute all downstream metrics.
+    df = _derive_returns_and_benchmark(df)
     df = metrics.compute_weekly_series(df)
-    if "spy_close" not in df.columns:
-        df["spy_close"] = None
 
     # Classify regime
     regime_name, regime_explanation = regime.classify_regime(df)
@@ -339,6 +433,36 @@ async def preview_excel(file: UploadFile = File(...)):
     content = await file.read()
     result = excel_parser.preview_excel(content)
     return ParsePreview(**result)
+
+
+@router.get("/template.xlsx")
+def download_import_template(user: User = Depends(get_current_user)):
+    """
+    Download an .xlsx template with the minimal required columns for import.
+    Columns: Date, Total Value, Net Deposits
+    """
+    import pandas as pd
+
+    sample_rows = [
+        {"Date": "2026-01-03", "Total Value": 100000, "Net Deposits": 100000},
+        {"Date": "2026-01-10", "Total Value": 101200, "Net Deposits": 100000},
+        {"Date": "2026-01-17", "Total Value": 101900, "Net Deposits": 100500},
+    ]
+    df = pd.DataFrame(sample_rows)
+
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Portfolio Import")
+    buf.seek(0)
+
+    headers = {
+        "Content-Disposition": 'attachment; filename="alphenzi_import_template.xlsx"'
+    }
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
 
 
 @router.get("/series", response_model=list[PortfolioSeriesRow])

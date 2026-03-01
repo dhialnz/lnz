@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { clearImportedData, previewExcel, importExcel } from "@/lib/api";
+import {
+  clearImportedData,
+  previewExcel,
+  importExcel,
+  downloadImportTemplate,
+} from "@/lib/api";
 import type { ParsePreview, ImportResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
@@ -15,6 +20,7 @@ export default function ImportPage() {
   const [preview, setPreview] = useState<ParsePreview | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [templateLoading, setTemplateLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [clearMessage, setClearMessage] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -77,6 +83,26 @@ export default function ImportPage() {
     }
   };
 
+  const handleDownloadTemplate = async () => {
+    setTemplateLoading(true);
+    setError(null);
+    try {
+      const blob = await downloadImportTemplate();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "alphenzi_import_template.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Template download failed");
+    } finally {
+      setTemplateLoading(false);
+    }
+  };
+
   return (
     <div className="max-w-3xl space-y-6">
       <div className="flex items-start justify-between gap-4">
@@ -86,13 +112,22 @@ export default function ImportPage() {
             Upload an .xlsx file with weekly portfolio and benchmark returns.
           </p>
         </div>
-        <button
-          onClick={handleClearImportedData}
-          disabled={loading}
-          className="text-xs font-mono px-3 py-2 rounded border border-negative/40 text-negative hover:bg-negative/10 transition-colors disabled:opacity-50"
-        >
-          {loading ? "Working..." : "Clear Imported Data"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleDownloadTemplate}
+            disabled={templateLoading || loading}
+            className="text-xs font-mono px-3 py-2 rounded border border-accent/40 text-accent hover:bg-accent/10 transition-colors disabled:opacity-50"
+          >
+            {templateLoading ? "Preparing..." : "Download Template"}
+          </button>
+          <button
+            onClick={handleClearImportedData}
+            disabled={loading || templateLoading}
+            className="text-xs font-mono px-3 py-2 rounded border border-negative/40 text-negative hover:bg-negative/10 transition-colors disabled:opacity-50"
+          >
+            {loading ? "Working..." : "Clear Imported Data"}
+          </button>
+        </div>
       </div>
 
       {clearMessage && (
@@ -284,8 +319,9 @@ export default function ImportPage() {
       {/* Template hint */}
       <div className="bg-panel border border-border rounded-lg p-4 text-xs font-mono text-muted space-y-1">
         <p className="text-gray-300 font-semibold">Required columns:</p>
-        <p>Date · Total Value · Net Deposits · Period Deposits · Period Return · SPY Period Return</p>
-        <p className="mt-1">Currency: $100,000.00 · Percent: 3.65% · Date: MM/DD/YYYY or DD/MM/YYYY</p>
+        <p>Date - Total Value - Net Deposits</p>
+        <p className="mt-1">Auto-calculated during import: Period Deposits - Period Return - SPY Period Return (from Yahoo Finance).</p>
+        <p className="mt-1">Currency: $100,000.00 - Date: YYYY-MM-DD, MM/DD/YYYY, or DD/MM/YYYY (enable day-first toggle).</p>
       </div>
     </div>
   );

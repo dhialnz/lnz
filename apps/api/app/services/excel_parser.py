@@ -12,20 +12,30 @@ from typing import Optional
 import pandas as pd
 
 
-# Required columns (case-insensitive canonical names -> internal names)
-REQUIRED_COLUMNS: dict[str, str] = {
+# Supported column aliases (case-insensitive canonical names -> internal names)
+COLUMN_ALIASES: dict[str, str] = {
     "date": "date",
+    "date ": "date",
     "total value": "total_value",
+    "total_value": "total_value",
     "net deposits": "net_deposits",
+    "net_deposits": "net_deposits",
     "period deposits": "period_deposits",
+    "period_deposits": "period_deposits",
     "period return": "period_return",
+    "period_return": "period_return",
     "spy period return": "benchmark_return",
+    "benchmark return": "benchmark_return",
+    "benchmark_return": "benchmark_return",
+    "spy return": "benchmark_return",
+    "spy_return": "benchmark_return",
 }
 
 OPTIONAL_DEFAULTS: dict[str, float] = {
     "net_deposits": 0.0,
-    "period_deposits": 0.0,
 }
+
+MIN_REQUIRED_COLUMNS = ["date", "total_value"]
 
 
 def _sanitise_currency(val) -> Optional[float]:
@@ -113,8 +123,8 @@ def _normalise_column_names(df: pd.DataFrame) -> dict[str, str]:
     mapping: dict[str, str] = {}
     for raw_col in df.columns:
         canon = raw_col.strip().lower()
-        if canon in REQUIRED_COLUMNS:
-            mapping[raw_col] = REQUIRED_COLUMNS[canon]
+        if canon in COLUMN_ALIASES:
+            mapping[raw_col] = COLUMN_ALIASES[canon]
     return mapping
 
 
@@ -126,8 +136,9 @@ def parse_excel(
     """
     Parse an Excel file and return (normalised_df, list_of_errors).
 
-    The returned DataFrame has columns:
-        date, total_value, net_deposits, period_deposits,
+    The returned DataFrame always has:
+        date, total_value, net_deposits, period_deposits
+    and may also include:
         period_return, benchmark_return
 
     Errors are non-fatal warnings (missing optional columns, parse issues).
@@ -147,25 +158,29 @@ def parse_excel(
     raw.columns = [str(c).strip() for c in raw.columns]
 
     col_map = _normalise_column_names(raw)
-    missing = [v for v in REQUIRED_COLUMNS.values() if v not in col_map.values()]
+    missing = [v for v in MIN_REQUIRED_COLUMNS if v not in col_map.values()]
 
-    # net_deposits and period_deposits are optional
-    optional_missing = [m for m in missing if m in OPTIONAL_DEFAULTS]
-    fatal_missing = [m for m in missing if m not in OPTIONAL_DEFAULTS]
-
-    if fatal_missing:
+    if missing:
         raise ValueError(
-            f"Missing required columns: {fatal_missing}. "
+            f"Missing required columns: {missing}. "
             f"Found: {list(raw.columns)}"
         )
 
-    for m in optional_missing:
-        errors.append(f"Optional column '{m}' not found; defaulting to 0.")
-
     df = raw.rename(columns=col_map)
 
-    # Keep only known columns
-    keep = [c for c in REQUIRED_COLUMNS.values() if c in df.columns]
+    # Keep only known columns in stable order.
+    keep = [
+        c
+        for c in [
+            "date",
+            "total_value",
+            "net_deposits",
+            "period_deposits",
+            "period_return",
+            "benchmark_return",
+        ]
+        if c in df.columns
+    ]
     df = df[keep].copy()
 
     # Add missing optional columns with defaults
@@ -195,8 +210,9 @@ def parse_excel(
         if col in df.columns:
             df[col] = df[col].apply(_sanitise_percent)
 
-    # Drop rows with NaN in critical numeric columns
-    critical = ["total_value", "period_return", "benchmark_return"]
+    # Drop rows with NaN in critical numeric columns.
+    # Returns can be auto-derived later in the import pipeline.
+    critical = ["total_value"]
     before = len(df)
     df = df.dropna(subset=critical)
     dropped = before - len(df)
@@ -206,7 +222,8 @@ def parse_excel(
     # Type casts
     df["date"] = pd.to_datetime(df["date"]).dt.date
     for col in ["total_value", "net_deposits", "period_deposits", "period_return", "benchmark_return"]:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
 
     if df.empty:
         raise ValueError("No valid rows remain after parsing.")

@@ -70,15 +70,27 @@ class TestParsing:
         content = _make_excel(data)
         df, errors = parse_excel(content)
         assert "net_deposits" in df.columns
-        assert "period_deposits" in df.columns
+        assert "period_deposits" not in df.columns
         assert (df["net_deposits"] == 0.0).all()
-        assert any("Optional column" in e for e in errors)
+        assert errors == []
 
     def test_raises_on_missing_required_column(self):
-        data = {k: v for k, v in VALID_DATA.items() if k != "Period Return"}
+        data = {k: v for k, v in VALID_DATA.items() if k != "Total Value"}
         content = _make_excel(data)
         with pytest.raises(ValueError, match="Missing required columns"):
             parse_excel(content)
+
+    def test_accepts_minimal_template(self):
+        data = {
+            "Date": ["01/05/2024", "01/12/2024", "01/19/2024"],
+            "Total Value": ["100000", "101500", "102800"],
+            "Net Deposits": ["100000", "100000", "100000"],
+        }
+        content = _make_excel(data)
+        df, errors = parse_excel(content)
+        assert len(df) == 3
+        assert list(df.columns) == ["date", "total_value", "net_deposits"]
+        assert errors == []
 
     def test_raises_on_empty_file(self):
         buf = BytesIO()
