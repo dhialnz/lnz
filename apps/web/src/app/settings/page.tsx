@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   activatePortfolio,
   createBillingCheckoutSession,
@@ -15,6 +16,8 @@ import type { AuthMe, PortfolioInfo } from "@/lib/types";
 import { fmtDate } from "@/lib/utils";
 
 export default function SettingsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [authMe, setAuthMe] = useState<AuthMe | null>(null);
   const [portfolios, setPortfolios] = useState<PortfolioInfo[]>([]);
   const [portfoliosLoading, setPortfoliosLoading] = useState(false);
@@ -25,6 +28,7 @@ export default function SettingsPage() {
   const [downloadingReport, setDownloadingReport] = useState(false);
   const [billingBusy, setBillingBusy] = useState(false);
   const [billingMessage, setBillingMessage] = useState<string | null>(null);
+  const [autoUpgradeHandled, setAutoUpgradeHandled] = useState(false);
 
   const tier = authMe?.tier ?? "observer";
   const isCommand = tier === "command";
@@ -33,6 +37,10 @@ export default function SettingsPage() {
     () => portfolios.find((p) => p.is_active) ?? null,
     [portfolios],
   );
+  const requestedUpgradeTier = useMemo(() => {
+    const raw = (searchParams.get("upgrade") || "").toLowerCase().trim();
+    return raw === "analyst" || raw === "command" ? raw : null;
+  }, [searchParams]);
 
   const loadAuthAndPortfolios = async () => {
     try {
@@ -125,7 +133,7 @@ export default function SettingsPage() {
     }
   };
 
-  const handleUpgrade = async (targetTier: "analyst" | "command") => {
+  const startUpgradeCheckout = useCallback(async (targetTier: "analyst" | "command") => {
     setBillingBusy(true);
     setBillingMessage(null);
     try {
@@ -135,7 +143,42 @@ export default function SettingsPage() {
       setBillingMessage(err instanceof Error ? err.message : "Unable to start checkout.");
       setBillingBusy(false);
     }
+  }, []);
+
+  const handleUpgrade = async (targetTier: "analyst" | "command") => {
+    await startUpgradeCheckout(targetTier);
   };
+
+  useEffect(() => {
+    if (autoUpgradeHandled) return;
+    if (!authMe) return;
+    if (!requestedUpgradeTier) return;
+
+    const canUpgrade =
+      (requestedUpgradeTier === "analyst" && tier === "observer") ||
+      (requestedUpgradeTier === "command" &&
+        (tier === "observer" || tier === "analyst"));
+
+    setAutoUpgradeHandled(true);
+
+    if (!canUpgrade) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("upgrade");
+      const query = params.toString();
+      router.replace(query ? `/settings?${query}` : "/settings");
+      return;
+    }
+
+    void startUpgradeCheckout(requestedUpgradeTier);
+  }, [
+    authMe,
+    autoUpgradeHandled,
+    requestedUpgradeTier,
+    router,
+    searchParams,
+    startUpgradeCheckout,
+    tier,
+  ]);
 
   const handleManageBilling = async () => {
     setBillingBusy(true);
