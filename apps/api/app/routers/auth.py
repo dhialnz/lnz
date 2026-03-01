@@ -42,6 +42,28 @@ class SetTierIn(BaseModel):
     tier: str
 
 
+def _extract_email_from_clerk_payload(data: dict) -> str | None:
+    email_addrs = data.get("email_addresses") or []
+    if not isinstance(email_addrs, list):
+        return None
+
+    primary_id = data.get("primary_email_address_id")
+    if primary_id:
+        for addr in email_addrs:
+            if isinstance(addr, dict) and addr.get("id") == primary_id:
+                email = addr.get("email_address")
+                if isinstance(email, str) and email:
+                    return email
+
+    for addr in email_addrs:
+        if isinstance(addr, dict):
+            email = addr.get("email_address")
+            if isinstance(email, str) and email:
+                return email
+
+    return None
+
+
 def _verify_svix_signature(
     *,
     body: bytes,
@@ -148,8 +170,7 @@ async def clerk_webhook(
 
     if event_type == "user.created":
         clerk_id = data.get("id", "")
-        email_addrs = data.get("email_addresses") or []
-        email = email_addrs[0].get("email_address") if email_addrs else None
+        email = _extract_email_from_clerk_payload(data)
         first = (data.get("first_name") or "").strip()
         last = (data.get("last_name") or "").strip()
         display_name = f"{first} {last}".strip() or None
@@ -203,8 +224,7 @@ async def clerk_webhook(
         clerk_id = data.get("id", "")
         user = db.query(User).filter(User.clerk_id == clerk_id).first()
         if user:
-            email_addrs = data.get("email_addresses") or []
-            email = email_addrs[0].get("email_address") if email_addrs else None
+            email = _extract_email_from_clerk_payload(data)
             first = (data.get("first_name") or "").strip()
             last = (data.get("last_name") or "").strip()
             user.email = email

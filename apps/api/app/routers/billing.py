@@ -56,20 +56,29 @@ def _base_url_from_request(request: Request) -> str:
 
 
 def _find_or_create_customer(user: User) -> str:
-    if not user.email:
-        raise HTTPException(status_code=400, detail="Account email is required for billing.")
+    # Prefer a targeted lookup by email when available.
+    if user.email:
+        customers = stripe.Customer.list(email=user.email, limit=20)
+        for customer in customers.auto_paging_iter():
+            metadata = (customer.get("metadata") or {})
+            if metadata.get("clerk_id") == user.clerk_id:
+                return str(customer.get("id"))
 
-    customers = stripe.Customer.list(email=user.email, limit=20)
+    # Fallback lookup by clerk_id metadata for users lacking email in local DB.
+    customers = stripe.Customer.list(limit=100)
     for customer in customers.auto_paging_iter():
         metadata = (customer.get("metadata") or {})
         if metadata.get("clerk_id") == user.clerk_id:
             return str(customer.get("id"))
 
-    created = stripe.Customer.create(
-        email=user.email,
-        name=user.display_name,
-        metadata={"clerk_id": user.clerk_id},
-    )
+    create_payload = {
+        "name": user.display_name,
+        "metadata": {"clerk_id": user.clerk_id},
+    }
+    if user.email:
+        create_payload["email"] = user.email
+
+    created = stripe.Customer.create(**create_payload)
     return str(created.get("id"))
 
 

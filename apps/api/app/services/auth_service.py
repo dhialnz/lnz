@@ -222,6 +222,27 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)) -> U
                 status_code=401,
                 detail="User not registered. Please sign in again.",
             )
+    else:
+        # Backfill profile fields if webhook/user.updated was delayed or missed.
+        claim_email = (claims.get("email") or claims.get("email_address") or None)
+        first = (claims.get("given_name") or claims.get("first_name") or "").strip()
+        last = (claims.get("family_name") or claims.get("last_name") or "").strip()
+        claim_display_name = f"{first} {last}".strip() or None
+        changed = False
+        if not user.email and claim_email:
+            user.email = claim_email
+            changed = True
+        if not user.display_name and claim_display_name:
+            user.display_name = claim_display_name
+            changed = True
+        if changed:
+            db.commit()
+            db.refresh(user)
+            logger.info(
+                "Backfilled user profile from token: clerk_id=%s email=%s",
+                clerk_id,
+                user.email,
+            )
     ensure_active_portfolio(db, user)
     return user
 
