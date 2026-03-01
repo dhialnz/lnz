@@ -7,6 +7,7 @@ import stripe
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from starlette.responses import RedirectResponse
 
 from app.config import settings
 from app.database import get_db
@@ -72,6 +73,63 @@ def _find_or_create_customer(user: User) -> str:
     return str(created.get("id"))
 
 
+def _create_checkout_url(
+    *,
+    user: User,
+    request: Request,
+    tier: Literal["analyst", "command"],
+) -> str:
+    _require_stripe_enabled()
+
+    price_id = _price_id_for_tier(tier)
+    if not price_id:
+        raise HTTPException(status_code=503, detail=f"Missing Stripe price id for tier '{tier}'.")
+
+    customer_id = _find_or_create_customer(user)
+    base = _base_url_from_request(request)
+
+    try:
+        session = stripe.checkout.Session.create(
+            mode="subscription",
+            customer=customer_id,
+            line_items=[{"price": price_id, "quantity": 1}],
+            allow_promotion_codes=True,
+            client_reference_id=user.clerk_id,
+            metadata={"clerk_id": user.clerk_id, "target_tier": tier},
+            subscription_data={"metadata": {"clerk_id": user.clerk_id}},
+            success_url=f"{base}/billing?billing=success",
+            cancel_url=f"{base}/billing?billing=cancel",
+        )
+    except Exception as exc:
+        logger.exception("Stripe checkout create failed: %s", exc)
+        raise HTTPException(status_code=502, detail="Failed to create checkout session.") from exc
+
+    url = session.get("url")
+    if not url:
+        raise HTTPException(status_code=502, detail="Stripe checkout did not return a URL.")
+    return str(url)
+
+
+def _create_portal_url(*, user: User, request: Request) -> str:
+    _require_stripe_enabled()
+
+    customer_id = _find_or_create_customer(user)
+    base = _base_url_from_request(request)
+    try:
+        session = stripe.billing_portal.Session.create(
+            customer=customer_id,
+            return_url=f"{base}/billing",
+        )
+    except Exception as exc:
+        logger.exception("Stripe billing portal create failed: %s", exc)
+        raise HTTPException(status_code=502, detail="Failed to create billing portal session.") from exc
+
+    url = session.get("url")
+    if not url:
+        raise HTTPException(status_code=502, detail="Stripe portal did not return a URL.")
+    return str(url)
+
+
 def _resolve_clerk_id_from_subscription(subscription: dict, db: Session) -> str | None:
     metadata = subscription.get("metadata") or {}
     clerk_id = metadata.get("clerk_id")
@@ -105,34 +163,7 @@ def create_checkout_session(
     request: Request,
     user: User = Depends(get_current_user),
 ) -> dict:
-    _require_stripe_enabled()
-
-    price_id = _price_id_for_tier(payload.tier)
-    if not price_id:
-        raise HTTPException(status_code=503, detail=f"Missing Stripe price id for tier '{payload.tier}'.")
-
-    customer_id = _find_or_create_customer(user)
-    base = _base_url_from_request(request)
-
-    try:
-        session = stripe.checkout.Session.create(
-            mode="subscription",
-            customer=customer_id,
-            line_items=[{"price": price_id, "quantity": 1}],
-            allow_promotion_codes=True,
-            client_reference_id=user.clerk_id,
-            metadata={"clerk_id": user.clerk_id, "target_tier": payload.tier},
-            subscription_data={"metadata": {"clerk_id": user.clerk_id}},
-            success_url=f"{base}/settings?billing=success",
-            cancel_url=f"{base}/settings?billing=cancel",
-        )
-    except Exception as exc:
-        logger.exception("Stripe checkout create failed: %s", exc)
-        raise HTTPException(status_code=502, detail="Failed to create checkout session.") from exc
-
-    url = session.get("url")
-    if not url:
-        raise HTTPException(status_code=502, detail="Stripe checkout did not return a URL.")
+    url = _create_checkout_url(user=user, request=request, tier=payload.tier)
     return {"url": url}
 
 
@@ -141,23 +172,27 @@ def create_billing_portal_session(
     request: Request,
     user: User = Depends(get_current_user),
 ) -> dict:
-    _require_stripe_enabled()
-
-    customer_id = _find_or_create_customer(user)
-    base = _base_url_from_request(request)
-    try:
-        session = stripe.billing_portal.Session.create(
-            customer=customer_id,
-            return_url=f"{base}/settings",
-        )
-    except Exception as exc:
-        logger.exception("Stripe billing portal create failed: %s", exc)
-        raise HTTPException(status_code=502, detail="Failed to create billing portal session.") from exc
-
-    url = session.get("url")
-    if not url:
-        raise HTTPException(status_code=502, detail="Stripe portal did not return a URL.")
+    url = _create_portal_url(user=user, request=request)
     return {"url": url}
+
+
+@router.get("/checkout-redirect")
+def checkout_redirect(
+    tier: Literal["analyst", "command"],
+    request: Request,
+    user: User = Depends(get_current_user),
+) -> RedirectResponse:
+    url = _create_checkout_url(user=user, request=request, tier=tier)
+    return RedirectResponse(url=url, status_code=303)
+
+
+@router.get("/portal-redirect")
+def portal_redirect(
+    request: Request,
+    user: User = Depends(get_current_user),
+) -> RedirectResponse:
+    url = _create_portal_url(user=user, request=request)
+    return RedirectResponse(url=url, status_code=303)
 
 
 @router.post("/webhook")

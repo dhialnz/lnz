@@ -3,8 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  createBillingCheckoutSession,
-  createBillingPortalSession,
   getAuthMe,
 } from "@/lib/api";
 import type { AuthMe } from "@/lib/types";
@@ -44,13 +42,7 @@ export default function BillingPage() {
   const startUpgradeCheckout = useCallback(async (targetTier: "analyst" | "command") => {
     setBusy(true);
     setMessage(null);
-    try {
-      const { url } = await createBillingCheckoutSession(targetTier);
-      window.location.assign(url);
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Unable to start checkout.");
-      setBusy(false);
-    }
+    window.location.assign(`/api/v1/billing/checkout-redirect?tier=${targetTier}`);
   }, []);
 
   useEffect(() => {
@@ -87,13 +79,7 @@ export default function BillingPage() {
   const openBillingPortal = async () => {
     setBusy(true);
     setMessage(null);
-    try {
-      const { url } = await createBillingPortalSession();
-      window.location.assign(url);
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Unable to open billing portal.");
-      setBusy(false);
-    }
+    window.location.assign("/api/v1/billing/portal-redirect");
   };
 
   return (
@@ -169,4 +155,3 @@ export default function BillingPage() {
     </div>
   );
 }
-
