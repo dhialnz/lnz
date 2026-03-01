@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   activatePortfolio,
   createBillingCheckoutSession,
-  createBillingPortalSession,
   createPortfolio,
   deletePortfolio,
   downloadWeeklyPdfReport,
@@ -180,18 +179,6 @@ export default function SettingsPage() {
     tier,
   ]);
 
-  const handleManageBilling = async () => {
-    setBillingBusy(true);
-    setBillingMessage(null);
-    try {
-      const { url } = await createBillingPortalSession();
-      window.location.assign(url);
-    } catch (err) {
-      setBillingMessage(err instanceof Error ? err.message : "Unable to open billing portal.");
-      setBillingBusy(false);
-    }
-  };
-
   return (
     <div className="max-w-3xl space-y-6">
       <div>
@@ -234,7 +221,7 @@ export default function SettingsPage() {
 
       <div className="bg-panel border border-border rounded-xl p-5 space-y-4">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h2 className="text-sm font-semibold text-gray-100">Billing</h2>
+          <h2 className="text-sm font-semibold text-gray-100">Upgrade Tier</h2>
           <span className="text-[11px] font-mono text-muted uppercase">Stripe</span>
         </div>
 
@@ -268,14 +255,11 @@ export default function SettingsPage() {
             </button>
           ) : null}
 
-          <button
-            onClick={() => void handleManageBilling()}
-            disabled={billingBusy}
-            className="rounded-lg border border-border bg-surface px-3 py-2 text-xs font-mono text-neutral transition hover:border-accent/40 hover:text-white disabled:opacity-50"
-          >
-            Manage Billing
-          </button>
         </div>
+
+        <p className="text-xs font-mono text-muted">
+          To change or cancel an active plan, use the <span className="text-neutral">Manage Plan</span> tab in the sidebar.
+        </p>
 
         {billingMessage ? (
           <p className="text-xs font-mono text-muted">{billingMessage}</p>

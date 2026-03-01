@@ -27,6 +27,7 @@ type IconName =
   | "shield"
   | "news"
   | "sparkles"
+  | "billing"
   | "settings";
 
 const NAV_ITEMS: Array<{ href: string; label: string; icon: IconName }> = [
@@ -37,6 +38,7 @@ const NAV_ITEMS: Array<{ href: string; label: string; icon: IconName }> = [
   { href: "/data", label: "Data Grid", icon: "table" },
   { href: "/import", label: "Upload Data", icon: "upload" },
   { href: "/rulebook", label: "Risk Playbook", icon: "shield" },
+  { href: "/billing", label: "Manage Plan", icon: "billing" },
   { href: "/settings", label: "Settings", icon: "settings" },
 ];
 
@@ -56,6 +58,7 @@ function IconGlyph({ name, active }: { name: IconName; active: boolean }) {
     news: "M4 5h13v14H4zM8 9h5M8 12h5M8 15h5M17 7h3v12h-3",
     sparkles:
       "M12 3l1.5 3.5L17 8l-3.5 1.5L12 13l-1.5-3.5L7 8l3.5-1.5zM5 14l.8 1.8L7.5 17l-1.7.7L5 19.5l-.8-1.8L2.5 17l1.7-.7zM18 14l.8 1.8 1.7.7-1.7.7-.8 1.8-.8-1.8-1.7-.7 1.7-.7z",
+    billing: "M3 7h18v12H3zM3 11h18M7 16h4",
     settings:
       "M12 3v3m0 12v3m9-9h-3M6 12H3m15.4 6.4-2.1-2.1M7.7 7.7 5.6 5.6m12.8 0-2.1 2.1M7.7 16.3l-2.1 2.1M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8z",
   };
@@ -155,6 +158,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     return "AI Partial";
   }, [aiPrewarm.ai_enabled, aiPrewarm.completed, aiPrewarm.started, aiReadyCount]);
   const aiProgressPct = Math.min(100, Math.max(0, Math.round((aiReadyCount / 3) * 100)));
+  const freeObserverPipelineRuns = authMe?.free_ai_pipeline_runs_remaining ?? 0;
   const tierLabel = authMe?.tier
     ? authMe.tier.toUpperCase()
     : "OBSERVER";
@@ -334,6 +338,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
                       : "Pipeline running..."
                     : "Press start to run AI summaries in the background."}
               </p>
+              {authMe?.tier === "observer" ? (
+                <p className="text-[10px] font-mono text-muted">
+                  Observer includes 1 free AI pipeline run before upgrade to Analyst or Command.
+                  {" "}
+                  <span className="text-neutral">
+                    {freeObserverPipelineRuns > 0 ? "(free run available)" : "(free run used)"}
+                  </span>
+                </p>
+              ) : null}
               {aiPrewarm.last_error && (
                 <p className="text-[10px] font-mono text-caution line-clamp-2">{aiPrewarm.last_error}</p>
               )}
