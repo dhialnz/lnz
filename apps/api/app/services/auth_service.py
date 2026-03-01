@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 from fastapi import Depends, HTTPException, Request
 from jose import JWTError, jwt
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -195,10 +196,32 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)) -> U
         raise HTTPException(status_code=401, detail="Token missing sub claim.")
     user = db.query(User).filter(User.clerk_id == clerk_id).first()
     if user is None:
-        raise HTTPException(
-            status_code=401,
-            detail="User not registered. Sign up and wait for account creation.",
-        )
+        # Auto-provision fallback: if webhook delivery is delayed/missed, create
+        # the local user on first authenticated request to avoid permanent SYNC.
+        email = (claims.get("email") or claims.get("email_address") or None)
+        first = (claims.get("given_name") or claims.get("first_name") or "").strip()
+        last = (claims.get("family_name") or claims.get("last_name") or "").strip()
+        display_name = f"{first} {last}".strip() or None
+        try:
+            user = User(
+                clerk_id=clerk_id,
+                email=email,
+                display_name=display_name,
+                tier="observer",
+                is_admin=False,
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            logger.info("Auto-provisioned user from token: clerk_id=%s email=%s", clerk_id, email)
+        except IntegrityError:
+            db.rollback()
+            user = db.query(User).filter(User.clerk_id == clerk_id).first()
+        if user is None:
+            raise HTTPException(
+                status_code=401,
+                detail="User not registered. Please sign in again.",
+            )
     ensure_active_portfolio(db, user)
     return user
 

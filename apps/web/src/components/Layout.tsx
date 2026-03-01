@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { MouseEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { UserButton, useAuth, useClerk } from "@clerk/nextjs";
+import { UserButton, useAuth, useClerk, useUser } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
 import { useCurrency } from "@/lib/currency";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -72,6 +72,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { signOut } = useClerk();
   const { isLoaded: clerkIsLoaded, isSignedIn } = useAuth();
+  const { user } = useUser();
   const { currency, setCurrency, usdPerCad, rateLoading } = useCurrency();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [authMe, setAuthMe] = useState<AuthMe | null>(null);
@@ -156,9 +157,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const aiProgressPct = Math.min(100, Math.max(0, Math.round((aiReadyCount / 3) * 100)));
   const tierLabel = authMe?.tier
     ? authMe.tier.toUpperCase()
-    : isSignedIn
-      ? "SYNC"
-      : "OBSERVER";
+    : "OBSERVER";
   const tierClassName =
     authMe?.tier === "command"
       ? "border-accent/40 bg-accent/10 text-accent"
@@ -395,7 +394,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 />
                 <div className="min-w-0">
                   <p className="truncate text-xs text-white">
-                    {authMe?.display_name || authMe?.email || (isSignedIn ? "Signed in" : "Not signed in")}
+                    {authMe?.display_name ||
+                      authMe?.email ||
+                      user?.fullName ||
+                      user?.primaryEmailAddress?.emailAddress ||
+                      (isSignedIn ? "Signed in" : "Not signed in")}
                   </p>
                   <div
                     className={cn(
