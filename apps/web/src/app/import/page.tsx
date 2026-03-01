@@ -318,10 +318,10 @@ export default function ImportPage() {
 
       {/* Template hint */}
       <div className="bg-panel border border-border rounded-lg p-4 text-xs font-mono text-muted space-y-1">
-        <p className="text-gray-300 font-semibold">Required columns:</p>
-        <p>Date - Total Value - Net Deposits</p>
-        <p className="mt-1">Auto-calculated during import: Period Deposits - Period Return - SPY Period Return (from Yahoo Finance).</p>
-        <p className="mt-1">Currency: $100,000.00 - Date: YYYY-MM-DD, MM/DD/YYYY, or DD/MM/YYYY (enable day-first toggle).</p>
+        <p className="text-gray-300 font-semibold">How to upload:</p>
+        <p>Download the template above, then fill each row using values from your broker account/export.</p>
+        <p className="mt-1">Enter only Date, Total Value, and Net Deposits. The rest is auto-calculated during import.</p>
+        <p className="mt-1">Use currency like $100,000.00 and date formats YYYY-MM-DD, MM/DD/YYYY, or DD/MM/YYYY.</p>
       </div>
     </div>
   );
