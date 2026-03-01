@@ -206,8 +206,14 @@ def checkout_redirect(
     request: Request,
     user: User = Depends(get_current_user),
 ) -> RedirectResponse:
-    url = _create_checkout_url(user=user, request=request, tier=tier)
-    return RedirectResponse(url=url, status_code=303)
+    try:
+        url = _create_checkout_url(user=user, request=request, tier=tier)
+        return RedirectResponse(url=url, status_code=303)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Unexpected checkout redirect failure: %s", exc)
+        raise HTTPException(status_code=502, detail=f"Checkout redirect failed: {exc}") from exc
 
 
 @router.get("/portal-redirect")
@@ -215,8 +221,14 @@ def portal_redirect(
     request: Request,
     user: User = Depends(get_current_user),
 ) -> RedirectResponse:
-    url = _create_portal_url(user=user, request=request)
-    return RedirectResponse(url=url, status_code=303)
+    try:
+        url = _create_portal_url(user=user, request=request)
+        return RedirectResponse(url=url, status_code=303)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Unexpected portal redirect failure: %s", exc)
+        raise HTTPException(status_code=502, detail=f"Portal redirect failed: {exc}") from exc
 
 
 @router.post("/webhook")
