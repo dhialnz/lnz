@@ -7,18 +7,12 @@ import {
   deletePortfolio,
   downloadWeeklyPdfReport,
   getAuthMe,
-  getMarketSnapshot,
   getPortfolios,
-  refreshMarketSnapshot,
 } from "@/lib/api";
-import type { AuthMe, MarketSnapshot, PortfolioInfo } from "@/lib/types";
+import type { AuthMe, PortfolioInfo } from "@/lib/types";
 import { fmtDate } from "@/lib/utils";
 
 export default function SettingsPage() {
-  const [snapshot, setSnapshot] = useState<MarketSnapshot | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
   const [authMe, setAuthMe] = useState<AuthMe | null>(null);
   const [portfolios, setPortfolios] = useState<PortfolioInfo[]>([]);
   const [portfoliosLoading, setPortfoliosLoading] = useState(false);
@@ -50,24 +44,8 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
-    getMarketSnapshot()
-      .then(setSnapshot)
-      .catch(() => setSnapshot(null));
     void loadAuthAndPortfolios();
   }, []);
-
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    setError(null);
-    try {
-      const snap = await refreshMarketSnapshot();
-      setSnapshot(snap);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Refresh failed");
-    } finally {
-      setRefreshing(false);
-    }
-  };
 
   const handleCreatePortfolio = async () => {
     const name = newPortfolioName.trim();
@@ -142,14 +120,12 @@ export default function SettingsPage() {
     }
   };
 
-  const p = snapshot?.payload;
-
   return (
     <div className="max-w-3xl space-y-6">
       <div>
         <h1 className="text-4xl leading-none font-serif tracking-tight text-white">Settings</h1>
         <p className="text-xs font-mono text-muted mt-0.5">
-          Tier access, multi-portfolio controls, and market snapshot.
+          Tier access and multi-portfolio controls.
         </p>
       </div>
 
@@ -274,50 +250,6 @@ export default function SettingsPage() {
         ) : null}
       </div>
 
-      <div className="bg-panel border border-border rounded-xl p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-100">Market Snapshot</h2>
-          <button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="text-xs font-mono bg-accent/10 hover:bg-accent/20 text-accent border border-accent/30 rounded px-3 py-1.5 transition-colors disabled:opacity-50"
-          >
-            {refreshing ? "Refreshing..." : "Refresh"}
-          </button>
-        </div>
-
-        {error ? <p className="text-xs font-mono text-negative">{error}</p> : null}
-
-        {p ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {[
-              ["SPY", p.spy],
-              ["VIX", p.vix],
-              ["2Y Treasury", p.t2y],
-              ["10Y Treasury", p.t10y],
-              ["DXY", p.dxy],
-              ["BTC", p.btc],
-            ].map(([label, value]) => (
-              <div key={String(label)} className="bg-surface border border-border rounded p-3">
-                <p className="text-xs font-mono text-muted">{label}</p>
-                <p className="text-sm font-mono font-semibold text-gray-100 mt-0.5">
-                  {value != null ? Number(value).toFixed(2) : "-"}
-                </p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-xs font-mono text-muted">
-            No snapshot available. Click Refresh to fetch.
-          </p>
-        )}
-
-        {snapshot ? (
-          <p className="text-xs font-mono text-muted">
-            Provider: {p?._provider ?? "-"} | Captured: {fmtDate(snapshot.captured_at)}
-          </p>
-        ) : null}
-      </div>
     </div>
   );
 }
