@@ -28,6 +28,7 @@ export default function SettingsPage() {
 
   const tier = authMe?.tier ?? "observer";
   const isCommand = tier === "command";
+  const freeObserverPipelineRuns = authMe?.free_ai_pipeline_runs_remaining ?? 0;
   const activePortfolio = useMemo(
     () => portfolios.find((p) => p.is_active) ?? null,
     [portfolios],
@@ -166,10 +167,19 @@ export default function SettingsPage() {
         </div>
 
         <div className="text-xs font-mono text-muted space-y-1">
-          <p>`observer`: core portfolio tools, no AI endpoints.</p>
+          <p>`observer`: core portfolio tools + 1 free AI pipeline run.</p>
           <p>`analyst`: observer + AI endpoints.</p>
           <p>`command`: analyst + multi-portfolio + weekly PDF export.</p>
         </div>
+
+        {tier === "observer" ? (
+          <p className="text-xs text-muted">
+            Free observer AI pipeline run:{" "}
+            <span className="font-mono text-neutral">
+              {freeObserverPipelineRuns > 0 ? "available" : "used"}
+            </span>
+          </p>
+        ) : null}
 
         <p className="text-xs text-muted">
           Current active portfolio:{" "}

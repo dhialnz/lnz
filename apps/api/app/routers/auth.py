@@ -20,7 +20,13 @@ from app.models.portfolio import PortfolioImport, PortfolioSeries
 from app.models.recommendations import Recommendation
 from app.models.rulebook import Rulebook
 from app.models.user import User
-from app.services.auth_service import SYSTEM_UUID, get_current_user, require_admin
+from app.services.auth_service import (
+    SYSTEM_UUID,
+    get_current_user,
+    observer_free_ai_pipeline_remaining,
+    observer_free_ai_pipeline_window_active,
+    require_admin,
+)
 
 logger = logging.getLogger("lnz.auth")
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -99,6 +105,13 @@ def get_me(user: User = Depends(get_current_user)) -> dict:
         "tier": user.tier,
         "is_admin": user.is_admin,
         "active_portfolio_id": str(user.active_portfolio_id) if user.active_portfolio_id else None,
+        "free_ai_pipeline_runs_remaining": observer_free_ai_pipeline_remaining(user),
+        "free_ai_pipeline_window_active": observer_free_ai_pipeline_window_active(user),
+        "free_ai_pipeline_window_ends_at": (
+            user.observer_free_ai_pipeline_window_ends_at.isoformat()
+            if user.observer_free_ai_pipeline_window_ends_at
+            else None
+        ),
     }
 
 

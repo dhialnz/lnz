@@ -22,7 +22,11 @@ from app.services.ai_advisor import (
     generate_portfolio_insights,
     resolve_ai_provider,
 )
-from app.services.auth_service import get_current_user, require_analyst
+from app.services.auth_service import (
+    get_current_user,
+    require_ai_pipeline_access,
+    require_analyst,
+)
 from app.services.portfolio_scope import require_active_portfolio_id
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -41,7 +45,7 @@ def get_ai_status(user: User = Depends(get_current_user)) -> AIStatusOut:
 @router.get("/portfolio-insights", response_model=PortfolioInsightsOut)
 async def get_portfolio_insights(
     db: Session = Depends(get_db),
-    user: User = Depends(require_analyst),
+    user: User = Depends(require_ai_pipeline_access),
 ) -> PortfolioInsightsOut:
     portfolio_id = require_active_portfolio_id(user)
     context = await build_ai_context(db, user.id, portfolio_id)
@@ -65,7 +69,7 @@ async def ai_chat(
 @router.get("/dashboard-recommendations", response_model=AIDashboardRecommendationsOut)
 async def get_dashboard_recommendations(
     db: Session = Depends(get_db),
-    user: User = Depends(require_analyst),
+    user: User = Depends(require_ai_pipeline_access),
 ) -> AIDashboardRecommendationsOut:
     portfolio_id = require_active_portfolio_id(user)
     context = await build_ai_context(db, user.id, portfolio_id)
@@ -76,7 +80,7 @@ async def get_dashboard_recommendations(
 @router.get("/news-summary", response_model=AINewsSummaryOut)
 async def get_news_summary(
     db: Session = Depends(get_db),
-    user: User = Depends(require_analyst),
+    user: User = Depends(require_ai_pipeline_access),
 ) -> AINewsSummaryOut:
     portfolio_id = require_active_portfolio_id(user)
     context = await build_ai_context(db, user.id, portfolio_id)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 import logging
 import time
 import uuid
@@ -24,6 +25,7 @@ SYSTEM_UUID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 _jwks_cache: dict[str, Any] = {}
 _jwks_fetched_at: float = 0.0
 _JWKS_TTL = 3600.0  # 1 hour
+OBSERVER_FREE_PIPELINE_WINDOW_MINUTES = 15
 
 
 async def _get_clerk_jwks() -> dict[str, Any]:
@@ -209,6 +211,75 @@ def require_analyst(user: User = Depends(get_current_user)) -> User:
             detail="AI access requires the Analyst tier or above. Upgrade your plan.",
         )
     return user
+
+
+def observer_free_ai_pipeline_remaining(user: User) -> int:
+    if user.tier != "observer":
+        return 0
+    return 0 if user.observer_free_ai_pipeline_used else 1
+
+
+def observer_free_ai_pipeline_window_active(user: User) -> bool:
+    if user.tier != "observer":
+        return False
+    ends_at = user.observer_free_ai_pipeline_window_ends_at
+    if not ends_at:
+        return False
+    now = dt.datetime.now(dt.timezone.utc)
+    return ends_at > now
+
+
+def _grant_observer_pipeline_window(user: User, db: Session) -> None:
+    now = dt.datetime.now(dt.timezone.utc)
+    user.observer_free_ai_pipeline_used = True
+    user.observer_free_ai_pipeline_window_ends_at = now + dt.timedelta(
+        minutes=OBSERVER_FREE_PIPELINE_WINDOW_MINUTES
+    )
+    db.commit()
+    db.refresh(user)
+    logger.info(
+        "Observer free AI pipeline consumed: clerk_id=%s window_ends_at=%s",
+        user.clerk_id,
+        user.observer_free_ai_pipeline_window_ends_at.isoformat()
+        if user.observer_free_ai_pipeline_window_ends_at
+        else None,
+    )
+
+
+def require_ai_pipeline_access(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> User:
+    """
+    Allows:
+    - analyst/command users (full access), and
+    - observer users for exactly one pipeline run, with a short grace window
+      to complete dashboard/news/assistant pipeline requests + retries.
+    """
+    if user.tier in {"analyst", "command"}:
+        return user
+
+    if user.tier != "observer":
+        raise HTTPException(status_code=403, detail="Invalid tier for AI pipeline access.")
+
+    window_active = observer_free_ai_pipeline_window_active(user)
+    if window_active:
+        return user
+
+    header = request.headers.get("x-lnz-ai-pipeline", "").strip().lower()
+    is_pipeline_request = header in {"1", "true", "yes"}
+    if is_pipeline_request and not user.observer_free_ai_pipeline_used:
+        _grant_observer_pipeline_window(user, db)
+        return user
+
+    raise HTTPException(
+        status_code=403,
+        detail=(
+            "Observer tier includes one free AI pipeline run via Start AI Pipeline. "
+            "Upgrade to Analyst for unlimited AI."
+        ),
+    )
 
 
 def require_admin(user: User = Depends(get_current_user)) -> User:

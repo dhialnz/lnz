@@ -350,7 +350,11 @@ export async function startGlobalAIPrewarm(force = false): Promise<void> {
       if (!dashboardReady) {
         stageTasks.push((async () => {
           const dashboard = await withRetries(
-            () => requireAiOutput(() => getAIDashboardRecommendations(), "dashboard"),
+            () =>
+              requireAiOutput(
+                () => getAIDashboardRecommendations({ pipeline: true }),
+                "dashboard",
+              ),
             PIPELINE_STAGE_RETRIES,
             PIPELINE_RETRY_BASE_DELAY_MS,
           );
@@ -385,7 +389,11 @@ export async function startGlobalAIPrewarm(force = false): Promise<void> {
       if (!newsReady) {
         stageTasks.push((async () => {
           const news = await withRetries(
-            () => requireAiOutput(() => getAINewsSummary(), "news"),
+            () =>
+              requireAiOutput(
+                () => getAINewsSummary({ pipeline: true }),
+                "news",
+              ),
             PIPELINE_STAGE_RETRIES,
             PIPELINE_RETRY_BASE_DELAY_MS,
           );
@@ -409,7 +417,11 @@ export async function startGlobalAIPrewarm(force = false): Promise<void> {
       if (!assistantReady) {
         stageTasks.push((async () => {
           const assistant = await withRetries(
-            () => requireAiOutput(() => getPortfolioInsights(), "assistant"),
+            () =>
+              requireAiOutput(
+                () => getPortfolioInsights({ pipeline: true }),
+                "assistant",
+              ),
             PIPELINE_STAGE_RETRIES,
             PIPELINE_RETRY_BASE_DELAY_MS,
           );

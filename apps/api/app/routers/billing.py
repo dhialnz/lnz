@@ -201,7 +201,7 @@ async def stripe_webhook(
         if clerk_id:
             status = str(subscription.get("status") or "")
             tier = "observer"
-            if event_type != "customer.subscription.deleted" and status in {"active", "trialing", "past_due"}:
+            if event_type != "customer.subscription.deleted" and status in {"active", "past_due"}:
                 items = (subscription.get("items") or {}).get("data") or []
                 price_id = None
                 if items:

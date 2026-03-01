@@ -504,8 +504,10 @@ export async function createBillingPortalSession(): Promise<{ url: string }> {
   });
 }
 
-export async function getPortfolioInsights(): Promise<PortfolioInsights> {
-  return request<PortfolioInsights>("/ai/portfolio-insights");
+export async function getPortfolioInsights(options?: { pipeline?: boolean }): Promise<PortfolioInsights> {
+  return request<PortfolioInsights>("/ai/portfolio-insights", {
+    headers: options?.pipeline ? { "X-LNZ-AI-Pipeline": "1" } : undefined,
+  });
 }
 
 export async function chatAI(
@@ -518,12 +520,18 @@ export async function chatAI(
   });
 }
 
-export async function getAIDashboardRecommendations(): Promise<AIDashboardRecommendations> {
-  return request<AIDashboardRecommendations>("/ai/dashboard-recommendations");
+export async function getAIDashboardRecommendations(
+  options?: { pipeline?: boolean },
+): Promise<AIDashboardRecommendations> {
+  return request<AIDashboardRecommendations>("/ai/dashboard-recommendations", {
+    headers: options?.pipeline ? { "X-LNZ-AI-Pipeline": "1" } : undefined,
+  });
 }
 
-export async function getAINewsSummary(): Promise<AINewsSummary> {
-  return request<AINewsSummary>("/ai/news-summary");
+export async function getAINewsSummary(options?: { pipeline?: boolean }): Promise<AINewsSummary> {
+  return request<AINewsSummary>("/ai/news-summary", {
+    headers: options?.pipeline ? { "X-LNZ-AI-Pipeline": "1" } : undefined,
+  });
 }
 
 // â”€â”€â”€ Rulebook â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
