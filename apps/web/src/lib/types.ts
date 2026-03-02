@@ -337,6 +337,11 @@ export interface AuthMe {
   tier: "observer" | "analyst" | "command";
   is_admin: boolean;
   active_portfolio_id?: string | null;
+  has_holdings?: boolean;
+  holdings_count?: number;
+  has_portfolio_data?: boolean;
+  portfolio_data_points_count?: number;
+  ai_pipeline_ready?: boolean;
   free_ai_pipeline_runs_remaining?: number;
   free_ai_pipeline_window_active?: boolean;
   free_ai_pipeline_window_ends_at?: string | null;

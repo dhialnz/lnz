@@ -81,6 +81,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [authMe, setAuthMe] = useState<AuthMe | null>(null);
   const [authSyncing, setAuthSyncing] = useState(false);
   const [logoutBusy, setLogoutBusy] = useState(false);
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
   const [aiPrewarm, setAiPrewarm] = useState<AIPrewarmState>({
     epoch: 0,
     started: false,
@@ -159,6 +160,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }, [aiPrewarm.ai_enabled, aiPrewarm.completed, aiPrewarm.started, aiReadyCount]);
   const aiProgressPct = Math.min(100, Math.max(0, Math.round((aiReadyCount / 3) * 100)));
   const freeObserverPipelineRuns = authMe?.free_ai_pipeline_runs_remaining ?? 0;
+  const hasHoldings = Boolean(authMe?.has_holdings);
+  const hasPortfolioData = Boolean(authMe?.has_portfolio_data);
+  const aiPipelineReady = Boolean(authMe?.ai_pipeline_ready);
+  const pipelineLockedForSetup = Boolean(isSignedIn && authMe && !aiPipelineReady);
   const tierLabel = authMe?.tier
     ? authMe.tier.toUpperCase()
     : "OBSERVER";
@@ -173,6 +178,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   const handleStartPipeline = async () => {
     if (aiPipelineBusy) return;
+    if (pipelineLockedForSetup) {
+      setShowWelcomeModal(true);
+      return;
+    }
     setAiPipelineBusy(true);
     try {
       // Force avoids stale "done" flags causing a no-op.
@@ -180,6 +189,35 @@ export function Layout({ children }: { children: React.ReactNode }) {
     } finally {
       setAiPipelineBusy(false);
     }
+  };
+
+  useEffect(() => {
+    if (!clerkIsLoaded || !isSignedIn || !authMe?.clerk_id) return;
+    if (aiPipelineReady) return;
+
+    const key = `lnz_welcome_seen_v1:${authMe.clerk_id}`;
+    try {
+      const seen = window.localStorage.getItem(key) === "1";
+      if (!seen) setShowWelcomeModal(true);
+    } catch {
+      setShowWelcomeModal(true);
+    }
+  }, [aiPipelineReady, authMe?.clerk_id, clerkIsLoaded, isSignedIn]);
+
+  const dismissWelcomeModal = () => {
+    if (authMe?.clerk_id) {
+      try {
+        window.localStorage.setItem(`lnz_welcome_seen_v1:${authMe.clerk_id}`, "1");
+      } catch {
+        // Ignore storage failures.
+      }
+    }
+    setShowWelcomeModal(false);
+  };
+
+  const handleWelcomeNavigate = (href: string) => {
+    dismissWelcomeModal();
+    router.push(href);
   };
 
   const handleClearPipeline = () => {
@@ -239,6 +277,76 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="relative flex h-screen overflow-hidden bg-surface">
+      {showWelcomeModal ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 px-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-border bg-[#0f1116] p-5 shadow-[0_20px_70px_rgba(0,0,0,0.45)]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-white">Welcome to Alphenzi</p>
+                <p className="mt-1 text-xs text-muted">
+                  Complete setup to unlock AI pipeline, copilot recommendations, and risk summaries.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={dismissWelcomeModal}
+                className="rounded-md border border-border px-2 py-1 text-[11px] font-mono text-muted hover:bg-white/[0.03] hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <div className="rounded-lg border border-border bg-[#101217] p-3">
+                <p className="text-xs font-semibold text-white">Required Setup</p>
+                <p className={cn("mt-2 text-[11px] font-mono", hasPortfolioData ? "text-positive" : "text-caution")}>
+                  1) {hasPortfolioData ? "Portfolio data uploaded" : "Upload portfolio data (Upload Data tab)"}
+                </p>
+                <p className={cn("mt-1 text-[11px] font-mono", hasHoldings ? "text-positive" : "text-caution")}>
+                  2) {hasHoldings ? "Holdings added" : "Add holdings (Holdings tab)"}
+                </p>
+                <p className="mt-1 text-[11px] font-mono text-muted">3) Start AI Pipeline from the left sidebar</p>
+              </div>
+
+              <div className="rounded-lg border border-border bg-[#101217] p-3">
+                <p className="text-xs font-semibold text-white">What Each Area Does</p>
+                <p className="mt-2 text-[11px] font-mono text-muted">Weekly Dashboard: performance + regime overview</p>
+                <p className="mt-1 text-[11px] font-mono text-muted">Holdings: positions, weights, P&L, concentration</p>
+                <p className="mt-1 text-[11px] font-mono text-muted">News Flow: market + portfolio-impact events</p>
+                <p className="mt-1 text-[11px] font-mono text-muted">AI Copilot: buy/hold/sell guidance after pipeline</p>
+                <p className="mt-1 text-[11px] font-mono text-muted">Data Grid: full weekly portfolio dataset</p>
+                <p className="mt-1 text-[11px] font-mono text-muted">Risk Playbook: your policy thresholds</p>
+                <p className="mt-1 text-[11px] font-mono text-muted">Manage Plan: upgrade/downgrade billing tier</p>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => handleWelcomeNavigate("/import")}
+                className="rounded-lg border border-accent/40 bg-accent/10 px-3 py-1.5 text-[11px] font-mono text-accent hover:bg-accent/20"
+              >
+                Start Setup: Upload Data
+              </button>
+              <button
+                type="button"
+                onClick={() => handleWelcomeNavigate("/holdings")}
+                className="rounded-lg border border-border px-3 py-1.5 text-[11px] font-mono text-muted hover:bg-white/[0.03] hover:text-white"
+              >
+                Go to Holdings
+              </button>
+              <button
+                type="button"
+                onClick={dismissWelcomeModal}
+                className="rounded-lg border border-border px-3 py-1.5 text-[11px] font-mono text-muted hover:bg-white/[0.03] hover:text-white"
+              >
+                Got It
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-50 w-[260px] hf-surface border-r border-border/80 transition-transform duration-200 ease-out lg:relative lg:z-40 lg:shrink-0",
@@ -330,6 +438,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <p className="text-[10px] font-mono text-muted">
                 {aiPipelineBusy
                   ? "Pipeline requested... generating dashboard, news, and assistant summaries."
+                  : pipelineLockedForSetup
+                    ? "AI pipeline is locked until your onboarding setup is complete."
                   : aiPrewarm.started
                     ? aiPrewarm.completed
                       ? aiReadyCount === 3
@@ -347,15 +457,50 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   </span>
                 </p>
               ) : null}
+              {pipelineLockedForSetup ? (
+                <div className="rounded-lg border border-border bg-[#0c0d11] p-2">
+                  <p className="text-[10px] font-mono text-muted">
+                    To unlock AI Pipeline, complete both steps:
+                  </p>
+                  <p className={cn("text-[10px] font-mono", hasPortfolioData ? "text-positive" : "text-caution")}>
+                    {hasPortfolioData ? "1) Portfolio data uploaded" : "1) Upload portfolio data in Upload Data"}
+                  </p>
+                  <p className={cn("text-[10px] font-mono", hasHoldings ? "text-positive" : "text-caution")}>
+                    {hasHoldings ? "2) Holdings added" : "2) Add at least one holding in Holdings"}
+                  </p>
+                  <div className="mt-1 flex gap-2">
+                    <Link
+                      href="/import"
+                      onClick={handleNavClick("/import")}
+                      className="rounded border border-border px-1.5 py-0.5 text-[10px] font-mono text-muted hover:bg-white/[0.03] hover:text-white"
+                    >
+                      Go to Upload Data
+                    </Link>
+                    <Link
+                      href="/holdings"
+                      onClick={handleNavClick("/holdings")}
+                      className="rounded border border-border px-1.5 py-0.5 text-[10px] font-mono text-muted hover:bg-white/[0.03] hover:text-white"
+                    >
+                      Go to Holdings
+                    </Link>
+                  </div>
+                </div>
+              ) : null}
               {aiPrewarm.last_error && (
                 <p className="text-[10px] font-mono text-caution line-clamp-2">{aiPrewarm.last_error}</p>
               )}
               <button
                 onClick={() => void handleStartPipeline()}
-                disabled={aiPipelineBusy}
+                disabled={aiPipelineBusy || pipelineLockedForSetup || authSyncing}
                 className="w-full rounded-lg border border-accent/40 bg-accent/10 px-2.5 py-1.5 text-[11px] font-mono text-accent transition hover:bg-accent/20 disabled:opacity-50"
               >
-                {aiPipelineBusy ? "Pipeline Running..." : aiPrewarm.started ? "Restart AI Pipeline" : "Start AI Pipeline"}
+                {aiPipelineBusy
+                  ? "Pipeline Running..."
+                  : pipelineLockedForSetup
+                    ? "Complete Setup to Unlock AI"
+                    : aiPrewarm.started
+                      ? "Restart AI Pipeline"
+                      : "Start AI Pipeline"}
               </button>
               <button
                 onClick={handleClearPipeline}

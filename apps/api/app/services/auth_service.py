@@ -14,6 +14,8 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
+from app.models.holdings import Holding
+from app.models.portfolio import PortfolioSeries
 from app.models.user import User
 from app.services.portfolio_scope import ensure_active_portfolio
 
@@ -273,6 +275,69 @@ def observer_free_ai_pipeline_window_active(user: User) -> bool:
     return ends_at > now
 
 
+def get_ai_pipeline_onboarding_status(db: Session, user: User) -> dict[str, int | bool]:
+    """
+    Returns onboarding readiness for AI pipeline access on the active portfolio.
+
+    AI pipeline requires both:
+    - at least one imported portfolio data row
+    - at least one holding
+    """
+    active_portfolio_id = user.active_portfolio_id
+    if not active_portfolio_id:
+        return {
+            "has_holdings": False,
+            "holdings_count": 0,
+            "has_portfolio_data": False,
+            "portfolio_data_points_count": 0,
+            "ai_pipeline_ready": False,
+        }
+
+    holdings_count = (
+        db.query(Holding.id)
+        .filter(
+            Holding.user_id == user.id,
+            Holding.portfolio_id == active_portfolio_id,
+        )
+        .count()
+    )
+    portfolio_data_points_count = (
+        db.query(PortfolioSeries.id)
+        .filter(
+            PortfolioSeries.user_id == user.id,
+            PortfolioSeries.portfolio_id == active_portfolio_id,
+        )
+        .count()
+    )
+    has_holdings = holdings_count > 0
+    has_portfolio_data = portfolio_data_points_count > 0
+    return {
+        "has_holdings": has_holdings,
+        "holdings_count": holdings_count,
+        "has_portfolio_data": has_portfolio_data,
+        "portfolio_data_points_count": portfolio_data_points_count,
+        "ai_pipeline_ready": has_holdings and has_portfolio_data,
+    }
+
+
+def _require_ai_pipeline_onboarding_complete(db: Session, user: User) -> None:
+    status = get_ai_pipeline_onboarding_status(db, user)
+    if bool(status["ai_pipeline_ready"]):
+        return
+
+    missing_steps: list[str] = []
+    if not bool(status["has_portfolio_data"]):
+        missing_steps.append("upload portfolio data in Upload Data")
+    if not bool(status["has_holdings"]):
+        missing_steps.append("add at least one holding in Holdings")
+
+    step_text = " and ".join(missing_steps) if missing_steps else "complete onboarding"
+    raise HTTPException(
+        status_code=403,
+        detail=f"AI pipeline is locked until you {step_text}.",
+    )
+
+
 def _grant_observer_pipeline_window(user: User, db: Session) -> None:
     now = dt.datetime.now(dt.timezone.utc)
     user.observer_free_ai_pipeline_used = True
@@ -301,6 +366,8 @@ def require_ai_pipeline_access(
     - observer users for exactly one pipeline run, with a short grace window
       to complete dashboard/news/assistant pipeline requests + retries.
     """
+    _require_ai_pipeline_onboarding_complete(db, user)
+
     if user.tier in {"analyst", "command"}:
         return user
 

@@ -23,6 +23,7 @@ from app.models.user import User
 from app.services.auth_service import (
     SYSTEM_UUID,
     get_current_user,
+    get_ai_pipeline_onboarding_status,
     observer_free_ai_pipeline_remaining,
     observer_free_ai_pipeline_window_active,
     require_admin,
@@ -118,8 +119,13 @@ def _verify_svix_signature(
 
 
 @router.get("/me")
-def get_me(user: User = Depends(get_current_user)) -> dict:
+def get_me(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
     # get_current_user already ensures active portfolio, but this keeps response explicit.
+    onboarding = get_ai_pipeline_onboarding_status(db=db, user=user)
+
     return {
         "clerk_id": user.clerk_id,
         "email": user.email,
@@ -127,6 +133,11 @@ def get_me(user: User = Depends(get_current_user)) -> dict:
         "tier": user.tier,
         "is_admin": user.is_admin,
         "active_portfolio_id": str(user.active_portfolio_id) if user.active_portfolio_id else None,
+        "has_holdings": bool(onboarding["has_holdings"]),
+        "holdings_count": int(onboarding["holdings_count"]),
+        "has_portfolio_data": bool(onboarding["has_portfolio_data"]),
+        "portfolio_data_points_count": int(onboarding["portfolio_data_points_count"]),
+        "ai_pipeline_ready": bool(onboarding["ai_pipeline_ready"]),
         "free_ai_pipeline_runs_remaining": observer_free_ai_pipeline_remaining(user),
         "free_ai_pipeline_window_active": observer_free_ai_pipeline_window_active(user),
         "free_ai_pipeline_window_ends_at": (
