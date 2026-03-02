@@ -161,7 +161,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const aiProgressPct = Math.min(100, Math.max(0, Math.round((aiReadyCount / 3) * 100)));
   const freeObserverPipelineRuns = authMe?.free_ai_pipeline_runs_remaining ?? 0;
   const observerFreeRunExhausted =
-    authMe?.tier === "observer" && freeObserverPipelineRuns <= 0;
+    authMe?.tier === "observer" &&
+    freeObserverPipelineRuns <= 0 &&
+    !authMe?.free_ai_pipeline_window_active;
   const hasHoldings = Boolean(authMe?.has_holdings);
   const hasPortfolioData = Boolean(authMe?.has_portfolio_data);
   const aiPipelineReady = Boolean(authMe?.ai_pipeline_ready);
@@ -455,7 +457,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   Observer includes 1 free AI pipeline run before upgrade to Analyst or Command.
                   {" "}
                   <span className="text-neutral">
-                    {freeObserverPipelineRuns > 0 ? "(free run available)" : "(free run used)"}
+                    {freeObserverPipelineRuns > 0
+                      ? "(free run available)"
+                      : authMe?.free_ai_pipeline_window_active
+                        ? "(free run used, retry window active)"
+                        : "(free run used)"}
                   </span>
                 </p>
               ) : null}
@@ -507,6 +513,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     ? "Complete Setup to Unlock AI"
                     : observerFreeRunExhausted
                       ? "Free Run Used - Upgrade Required"
+                      : authMe?.tier === "observer" &&
+                          freeObserverPipelineRuns <= 0 &&
+                          authMe?.free_ai_pipeline_window_active
+                        ? "Retry Failed Pipeline"
                     : aiPrewarm.started
                       ? "Restart AI Pipeline"
                       : "Start AI Pipeline"}

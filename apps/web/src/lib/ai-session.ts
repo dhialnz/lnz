@@ -362,7 +362,36 @@ export async function startGlobalAIPrewarm(force = false): Promise<void> {
       );
       dashboardReady = true;
     } else {
-      dashboardError = seededDashboard.error;
+      // Observer retry path: if free run was already consumed, the backend
+      // rejects a second "start" header. Retry once without the pipeline
+      // header so an in-window retry can complete.
+      const lowerSeedError = seededDashboard.error.toLowerCase();
+      const shouldRetryWithoutStartHeader =
+        lowerSeedError.includes("already used") ||
+        lowerSeedError.includes("free ai pipeline run");
+      if (shouldRetryWithoutStartHeader) {
+        const seededDashboardRetry = await withRetries(
+          () =>
+            requireAiOutput(
+              () => getAIDashboardRecommendations(),
+              "dashboard",
+            ),
+          PIPELINE_STAGE_RETRIES,
+          PIPELINE_RETRY_BASE_DELAY_MS,
+        );
+        if (seededDashboardRetry.ok) {
+          writeLatestDashboardRecommendations(
+            seededDashboardRetry.value.recommendations,
+            seededDashboardRetry.value.model,
+            epoch,
+          );
+          dashboardReady = true;
+        } else {
+          dashboardError = seededDashboardRetry.error;
+        }
+      } else {
+        dashboardError = seededDashboard.error;
+      }
     }
 
     const maxRounds = PIPELINE_MAX_ROUNDS;
