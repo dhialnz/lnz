@@ -10,9 +10,9 @@ export const metadata: Metadata = {
   description:
     "Deterministic portfolio analytics and decision support. Not financial advice.",
   icons: {
-    icon: "/branding/alphenzi-logo-v3.svg",
-    shortcut: "/branding/alphenzi-logo-v3.svg",
-    apple: "/branding/alphenzi-logo-v3.svg",
+    icon: "/favicon.svg",
+    shortcut: "/favicon.svg",
+    apple: "/favicon.svg",
   },
 };
 
@@ -41,3 +41,4 @@ export default function RootLayout({
     </ClerkProvider>
   );
 }
+
