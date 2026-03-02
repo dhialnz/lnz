@@ -343,6 +343,28 @@ export async function startGlobalAIPrewarm(force = false): Promise<void> {
     let newsError = "";
     let assistantError = "";
 
+    // Consume observer free-run entitlement exactly once per pipeline run.
+    // Backend interprets X-LNZ-AI-Pipeline as the start signal.
+    const seededDashboard = await withRetries(
+      () =>
+        requireAiOutput(
+          () => getAIDashboardRecommendations({ pipeline: true }),
+          "dashboard",
+        ),
+      PIPELINE_STAGE_RETRIES,
+      PIPELINE_RETRY_BASE_DELAY_MS,
+    );
+    if (seededDashboard.ok) {
+      writeLatestDashboardRecommendations(
+        seededDashboard.value.recommendations,
+        seededDashboard.value.model,
+        epoch,
+      );
+      dashboardReady = true;
+    } else {
+      dashboardError = seededDashboard.error;
+    }
+
     const maxRounds = PIPELINE_MAX_ROUNDS;
     for (let round = 1; round <= maxRounds; round += 1) {
       const stageTasks: Promise<void>[] = [];
@@ -352,7 +374,7 @@ export async function startGlobalAIPrewarm(force = false): Promise<void> {
           const dashboard = await withRetries(
             () =>
               requireAiOutput(
-                () => getAIDashboardRecommendations({ pipeline: true }),
+                () => getAIDashboardRecommendations(),
                 "dashboard",
               ),
             PIPELINE_STAGE_RETRIES,
@@ -391,7 +413,7 @@ export async function startGlobalAIPrewarm(force = false): Promise<void> {
           const news = await withRetries(
             () =>
               requireAiOutput(
-                () => getAINewsSummary({ pipeline: true }),
+                () => getAINewsSummary(),
                 "news",
               ),
             PIPELINE_STAGE_RETRIES,
@@ -419,7 +441,7 @@ export async function startGlobalAIPrewarm(force = false): Promise<void> {
           const assistant = await withRetries(
             () =>
               requireAiOutput(
-                () => getPortfolioInsights({ pipeline: true }),
+                () => getPortfolioInsights(),
                 "assistant",
               ),
             PIPELINE_STAGE_RETRIES,

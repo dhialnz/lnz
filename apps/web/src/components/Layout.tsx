@@ -160,6 +160,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }, [aiPrewarm.ai_enabled, aiPrewarm.completed, aiPrewarm.started, aiReadyCount]);
   const aiProgressPct = Math.min(100, Math.max(0, Math.round((aiReadyCount / 3) * 100)));
   const freeObserverPipelineRuns = authMe?.free_ai_pipeline_runs_remaining ?? 0;
+  const observerFreeRunExhausted =
+    authMe?.tier === "observer" && freeObserverPipelineRuns <= 0;
   const hasHoldings = Boolean(authMe?.has_holdings);
   const hasPortfolioData = Boolean(authMe?.has_portfolio_data);
   const aiPipelineReady = Boolean(authMe?.ai_pipeline_ready);
@@ -491,13 +493,20 @@ export function Layout({ children }: { children: React.ReactNode }) {
               )}
               <button
                 onClick={() => void handleStartPipeline()}
-                disabled={aiPipelineBusy || pipelineLockedForSetup || authSyncing}
+                disabled={
+                  aiPipelineBusy ||
+                  pipelineLockedForSetup ||
+                  observerFreeRunExhausted ||
+                  authSyncing
+                }
                 className="w-full rounded-lg border border-accent/40 bg-accent/10 px-2.5 py-1.5 text-[11px] font-mono text-accent transition hover:bg-accent/20 disabled:opacity-50"
               >
                 {aiPipelineBusy
                   ? "Pipeline Running..."
                   : pipelineLockedForSetup
                     ? "Complete Setup to Unlock AI"
+                    : observerFreeRunExhausted
+                      ? "Free Run Used - Upgrade Required"
                     : aiPrewarm.started
                       ? "Restart AI Pipeline"
                       : "Start AI Pipeline"}

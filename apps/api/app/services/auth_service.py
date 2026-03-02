@@ -374,14 +374,22 @@ def require_ai_pipeline_access(
     if user.tier != "observer":
         raise HTTPException(status_code=403, detail="Invalid tier for AI pipeline access.")
 
-    window_active = observer_free_ai_pipeline_window_active(user)
-    if window_active:
-        return user
-
     header = request.headers.get("x-lnz-ai-pipeline", "").strip().lower()
     is_pipeline_request = header in {"1", "true", "yes"}
-    if is_pipeline_request and not user.observer_free_ai_pipeline_used:
+    if is_pipeline_request:
+        if user.observer_free_ai_pipeline_used:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Observer free AI pipeline run already used. "
+                    "Upgrade to Analyst for unlimited AI."
+                ),
+            )
         _grant_observer_pipeline_window(user, db)
+        return user
+
+    window_active = observer_free_ai_pipeline_window_active(user)
+    if window_active:
         return user
 
     raise HTTPException(
