@@ -98,35 +98,30 @@ def _period_change_from_history(
     return change_amount, change_pct, prior_total
 
 
-def _compute_sharpe_sortino(
+def _portfolio_daily_returns(
     holdings_live: list[HoldingLive],
     total_value: float,
-) -> tuple[float | None, float | None]:
-    """
-    Compute annualised Sharpe and Sortino from the sparklines of all holdings,
-    weighted by current portfolio allocation.
-    """
+) -> list[float]:
+    """Build a portfolio-level daily return series from aligned holding sparklines."""
     if total_value <= 0:
-        return None, None
+        return []
 
-    # Build a dict of {date: {ticker: close}} aligned across all tickers
+    priced = [h for h in holdings_live if h.current_price is not None and h.total_value is not None and h.sparkline]
+    if not priced:
+        return []
+
+    # Build a dict of {date: {ticker: close}} aligned across priced tickers.
     date_closes: dict[str, dict[str, float]] = {}
-    for h in holdings_live:
-        if h.current_price is None or not h.sparkline:
-            continue
+    for h in priced:
         for pt in h.sparkline:
             date_closes.setdefault(pt.date, {})[h.ticker] = pt.close
 
     # Need at least 5 common dates
-    common_dates = sorted(
-        d for d, tickers in date_closes.items() if len(tickers) == len(
-            [h for h in holdings_live if h.current_price is not None]
-        )
-    )
+    common_dates = sorted(d for d, tickers in date_closes.items() if len(tickers) == len(priced))
     if len(common_dates) < 5:
-        return None, None
+        return []
 
-    # Compute daily portfolio returns
+    # Compute daily portfolio returns.
     portfolio_returns: list[float] = []
     prev_date = None
     for d in common_dates:
@@ -136,9 +131,7 @@ def _compute_sharpe_sortino(
         prev_closes = date_closes[prev_date]
         curr_closes = date_closes[d]
         daily_ret = 0.0
-        for h in holdings_live:
-            if h.current_price is None or h.total_value is None:
-                continue
+        for h in priced:
             weight = h.total_value / total_value
             pc = prev_closes.get(h.ticker)
             cc = curr_closes.get(h.ticker)
@@ -146,11 +139,17 @@ def _compute_sharpe_sortino(
                 daily_ret += weight * ((cc / pc) - 1.0)
         portfolio_returns.append(daily_ret)
         prev_date = d
+    return portfolio_returns
 
-    if len(portfolio_returns) < 4:
+
+def _compute_portfolio_risk_metrics(
+    daily_returns: list[float],
+) -> tuple[float | None, float | None]:
+    """Compute annualised Sharpe and Sortino from portfolio daily returns."""
+    if len(daily_returns) < 4:
         return None, None
 
-    returns_arr = np.array(portfolio_returns)
+    returns_arr = np.array(daily_returns)
     rf_daily = _RISK_FREE_ANNUAL / 252
     excess = returns_arr - rf_daily
     mean_excess = float(np.mean(excess))
@@ -171,6 +170,56 @@ def _compute_sharpe_sortino(
     return (
         round(sharpe, 4) if math.isfinite(sharpe) else None,
         round(sortino, 4) if sortino is not None and math.isfinite(sortino) else None,
+    )
+
+
+def _compute_portfolio_extended_metrics(
+    daily_returns: list[float],
+) -> tuple[float | None, float | None, float | None, float | None, float | None]:
+    """
+    Returns (profit_factor, cagr, r_expectancy, mae, mfe) from daily return series.
+    All return-based metrics are decimals (e.g., 0.12 = 12%).
+    """
+    if not daily_returns:
+        return None, None, None, None, None
+
+    arr = np.array(daily_returns, dtype=float)
+    pos = arr[arr > 0]
+    neg = arr[arr < 0]
+
+    # Profit factor = gross gains / gross losses(abs)
+    gross_profit = float(np.sum(pos)) if len(pos) else 0.0
+    gross_loss_abs = abs(float(np.sum(neg))) if len(neg) else 0.0
+    profit_factor = (gross_profit / gross_loss_abs) if gross_loss_abs > 0 else None
+
+    # CAGR from cumulative growth over the observed daily return window.
+    growth = float(np.prod(1.0 + arr))
+    periods = len(arr)
+    cagr = None
+    if periods > 0 and growth > 0:
+        cagr_raw = growth ** (252 / periods) - 1.0
+        cagr = cagr_raw if math.isfinite(cagr_raw) else None
+
+    # R-expectancy in R-multiples where average losing day magnitude = 1R.
+    r_expectancy = None
+    if len(pos) and len(neg):
+        avg_win = float(np.mean(pos))
+        avg_loss_abs = abs(float(np.mean(neg)))
+        if avg_loss_abs > 0:
+            win_rate = len(pos) / periods
+            loss_rate = len(neg) / periods
+            r_raw = (win_rate * (avg_win / avg_loss_abs)) - loss_rate
+            r_expectancy = r_raw if math.isfinite(r_raw) else None
+
+    mae = float(np.min(arr)) if len(arr) else None
+    mfe = float(np.max(arr)) if len(arr) else None
+
+    return (
+        round(profit_factor, 4) if profit_factor is not None else None,
+        round(cagr, 4) if cagr is not None else None,
+        round(r_expectancy, 4) if r_expectancy is not None else None,
+        round(mae, 4) if mae is not None and math.isfinite(mae) else None,
+        round(mfe, 4) if mfe is not None and math.isfinite(mfe) else None,
     )
 
 
@@ -204,6 +253,11 @@ async def get_holdings_for_user(
             total_year_change_pct=None,
             sharpe_30d=None,
             sortino_30d=None,
+            profit_factor=None,
+            cagr=None,
+            r_expectancy=None,
+            mae=None,
+            mfe=None,
             as_of=dt.datetime.utcnow().isoformat() + "Z",
         )
 
@@ -393,10 +447,15 @@ async def get_holdings_for_user(
         else None
     )
 
-    # Sharpe / Sortino
+    # Portfolio risk/quality metrics from aligned daily return series.
     sharpe, sortino = (None, None)
+    profit_factor, cagr, r_expectancy, mae, mfe = (None, None, None, None, None)
     if total_value_portfolio:
-        sharpe, sortino = _compute_sharpe_sortino(holdings_live, total_value_portfolio)
+        daily_returns = _portfolio_daily_returns(holdings_live, total_value_portfolio)
+        sharpe, sortino = _compute_portfolio_risk_metrics(daily_returns)
+        profit_factor, cagr, r_expectancy, mae, mfe = _compute_portfolio_extended_metrics(
+            daily_returns
+        )
 
     return HoldingsSnapshot(
         holdings=holdings_live,
@@ -414,6 +473,11 @@ async def get_holdings_for_user(
         total_year_change_pct=total_year_change_pct,
         sharpe_30d=sharpe,
         sortino_30d=sortino,
+        profit_factor=profit_factor,
+        cagr=cagr,
+        r_expectancy=r_expectancy,
+        mae=mae,
+        mfe=mfe,
         fx_warning=bool(cad_holdings) and usd_per_cad is None,
         as_of=dt.datetime.utcnow().isoformat() + "Z",
     )

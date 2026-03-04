@@ -51,6 +51,19 @@ function MetricTile({
   );
 }
 
+function InfoHint({ text }: { text: string }) {
+  return (
+    <details className="relative">
+      <summary className="list-none cursor-pointer text-[10px] font-mono text-muted hover:text-accent rounded border border-border px-1 leading-4 [&::-webkit-details-marker]:hidden">
+        i
+      </summary>
+      <div className="absolute right-0 z-20 mt-1 w-60 rounded border border-border bg-[#0c0d11] p-2 text-[10px] font-mono leading-relaxed text-muted shadow-xl">
+        {text}
+      </div>
+    </details>
+  );
+}
+
 function signedPfx(v: number | null) {
   if (v == null) return "";
   return v >= 0 ? "+" : "";
@@ -348,7 +361,7 @@ export default function HoldingsPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
         <MetricTile
           label={`Total Value (${currencyLabel})`}
           value={fmtDisplayCurrency(fromUsd(s.total_value))}
@@ -383,21 +396,24 @@ export default function HoldingsPage() {
               : undefined
           }
           headerRight={
-            <div className="inline-flex items-center rounded border border-border overflow-hidden">
-              {(["1D", "1W", "1M", "1Y"] as ChangeWindow[]).map((window) => (
-                <button
-                  key={window}
-                  type="button"
-                  onClick={() => setChangeWindow(window)}
-                  className={`px-1.5 py-0.5 text-[10px] font-mono transition-colors ${
-                    changeWindow === window
-                      ? "bg-accent text-surface"
-                      : "text-muted hover:text-accent hover:bg-accent/10"
-                  }`}
-                >
-                  {window}
-                </button>
-              ))}
+            <div className="inline-flex items-center gap-1">
+              <InfoHint text="Portfolio change over selected window (1D/1W/1M/1Y), based on current holdings and market prices." />
+              <div className="inline-flex items-center rounded border border-border overflow-hidden">
+                {(["1D", "1W", "1M", "1Y"] as ChangeWindow[]).map((window) => (
+                  <button
+                    key={window}
+                    type="button"
+                    onClick={() => setChangeWindow(window)}
+                    className={`px-1.5 py-0.5 text-[10px] font-mono transition-colors ${
+                      changeWindow === window
+                        ? "bg-accent text-surface"
+                        : "text-muted hover:text-accent hover:bg-accent/10"
+                    }`}
+                  >
+                    {window}
+                  </button>
+                ))}
+              </div>
             </div>
           }
         />
@@ -406,12 +422,63 @@ export default function HoldingsPage() {
           value={s.sharpe_30d != null ? fmt(s.sharpe_30d) : "-"}
           valueClass={s.sharpe_30d != null ? signedClass(s.sharpe_30d) : "text-muted"}
           sub="Annualised"
+          headerRight={
+            <InfoHint text="Risk-adjusted return over the last 30 trading days: excess return divided by volatility. Higher is better." />
+          }
         />
         <MetricTile
           label="Sortino (30d)"
           value={s.sortino_30d != null ? fmt(s.sortino_30d) : "-"}
           valueClass={s.sortino_30d != null ? signedClass(s.sortino_30d) : "text-muted"}
           sub="Annualised"
+          headerRight={
+            <InfoHint text="Sharpe-like metric using downside volatility only over the last 30 trading days. Higher is better." />
+          }
+        />
+        <MetricTile
+          label="Profit Factor"
+          value={s.profit_factor != null ? fmt(s.profit_factor) : "-"}
+          valueClass={s.profit_factor != null ? "text-accent" : "text-muted"}
+          sub="Gross gains / gross losses"
+          headerRight={
+            <InfoHint text="Sum of positive daily returns divided by absolute sum of negative daily returns. >1 generally indicates stronger gain-to-pain profile." />
+          }
+        />
+        <MetricTile
+          label="CAGR"
+          value={s.cagr != null ? fmtPct(s.cagr) : "-"}
+          valueClass={s.cagr != null ? signedClass(s.cagr) : "text-muted"}
+          sub="Annualized growth rate"
+          headerRight={
+            <InfoHint text="Compounded annual growth rate inferred from the portfolio daily return path in the current lookback history." />
+          }
+        />
+        <MetricTile
+          label="R-Expectancy"
+          value={s.r_expectancy != null ? fmt(s.r_expectancy) : "-"}
+          valueClass={s.r_expectancy != null ? signedClass(s.r_expectancy) : "text-muted"}
+          sub="Expected R per day"
+          headerRight={
+            <InfoHint text="Expected value in R-multiples, where average losing day magnitude is 1R. Positive values indicate favorable expectancy." />
+          }
+        />
+        <MetricTile
+          label="MAE (Daily)"
+          value={s.mae != null ? `${signedPfx(s.mae)}${fmtPct(s.mae)}` : "-"}
+          valueClass={s.mae != null ? signedClass(s.mae) : "text-muted"}
+          sub="Most adverse daily move"
+          headerRight={
+            <InfoHint text="Maximum adverse excursion from observed portfolio daily returns (worst daily move in the current history)." />
+          }
+        />
+        <MetricTile
+          label="MFE (Daily)"
+          value={s.mfe != null ? `${signedPfx(s.mfe)}${fmtPct(s.mfe)}` : "-"}
+          valueClass={s.mfe != null ? signedClass(s.mfe) : "text-muted"}
+          sub="Most favorable daily move"
+          headerRight={
+            <InfoHint text="Maximum favorable excursion from observed portfolio daily returns (best daily move in the current history)." />
+          }
         />
       </div>
 
@@ -687,5 +754,4 @@ export default function HoldingsPage() {
     </div>
   );
 }
-
 

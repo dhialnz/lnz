@@ -444,13 +444,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   ? "Pipeline requested... generating dashboard, news, and assistant summaries."
                   : pipelineLockedForSetup
                     ? "AI pipeline is locked until your onboarding setup is complete."
-                  : aiPrewarm.started
-                    ? aiPrewarm.completed
-                      ? aiReadyCount === 3
-                        ? "Pipeline completed. Use restart to regenerate all summaries."
-                        : "Pipeline ended partial. Press restart to retry failed summaries."
+                    : aiPrewarm.started
+                      ? aiPrewarm.completed
+                        ? aiReadyCount === 3
+                          ? "Pipeline completed. Use restart to regenerate all summaries."
+                          : "Pipeline ended partial. Press restart to retry failed summaries."
                       : "Pipeline running..."
                     : "Press start to run AI summaries in the background."}
+              </p>
+              <p className="text-[10px] font-mono text-muted">
+                Please allow 1-2 minutes for the pipeline to complete after starting it.
               </p>
               {authMe?.tier === "observer" ? (
                 <p className="text-[10px] font-mono text-muted">

@@ -217,6 +217,11 @@ export interface HoldingsSnapshot {
   total_year_change_pct: number | null;
   sharpe_30d: number | null;
   sortino_30d: number | null;
+  profit_factor: number | null;
+  cagr: number | null;
+  r_expectancy: number | null;
+  mae: number | null;
+  mfe: number | null;
   /** True when CAD-cost holdings are present but the CAD/USD FX rate is unavailable. */
   fx_warning?: boolean;
   as_of: string;

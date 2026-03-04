@@ -99,6 +99,11 @@ class HoldingsSnapshot(BaseModel):
 
     sharpe_30d: Optional[float]
     sortino_30d: Optional[float]
+    profit_factor: Optional[float] = None
+    cagr: Optional[float] = None
+    r_expectancy: Optional[float] = None
+    mae: Optional[float] = None
+    mfe: Optional[float] = None
 
     # True when CAD-cost holdings are present but the CAD/USD rate is unavailable.
     # Cost-basis figures may be slightly inaccurate until FX data recovers.
