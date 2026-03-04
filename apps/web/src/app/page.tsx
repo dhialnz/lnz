@@ -173,6 +173,11 @@ function emptyHoldingsSnapshot(): HoldingsSnapshot {
     total_year_change_pct: null,
     sharpe_30d: null,
     sortino_30d: null,
+    profit_factor: null,
+    cagr: null,
+    r_expectancy: null,
+    mae: null,
+    mfe: null,
     as_of: new Date().toISOString(),
   };
 }
