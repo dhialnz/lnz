@@ -547,6 +547,7 @@ def _llm_compact_context(context: dict[str, Any]) -> dict[str, Any]:
             "mfe": holdings_snapshot.get("mfe"),
         },
         "top_holdings": _llm_context_top_holdings(list(context.get("holdings") or [])),
+        "holding_research": list(context.get("holding_research") or [])[:_LLM_HOLDINGS_LIMIT],
         "top_news": _llm_context_top_news(list(context.get("news_events") or [])),
         "top_impacted_holdings": list(context.get("top_impacted_holdings") or [])[:12],
         "important_sources": list(context.get("important_sources") or [])[:_IMPORTANT_NEWS_LIMIT],
@@ -1306,13 +1307,55 @@ async def build_ai_context(
     top_impacted_holdings = aggregate_top_impacted(impacted_events, top_n=12)
     important_sources = _important_news_sources(impacted_events, limit=_IMPORTANT_NEWS_LIMIT)
     holdings_snapshot_dict = holdings_snapshot.model_dump()
+    holdings_payload = [h.model_dump() for h in holdings]
+
+    holding_research: list[dict[str, Any]] = []
+    top_weighted = sorted(
+        holdings_payload,
+        key=lambda x: float(x.get("weight") or 0.0),
+        reverse=True,
+    )[:_LLM_HOLDINGS_LIMIT]
+    top_tickers = [str(h.get("ticker") or "").upper() for h in top_weighted if h.get("ticker")]
+    if top_tickers:
+        try:
+            research_map = await yahoo_quotes.fetch_batch_research(top_tickers)
+            for h in top_weighted:
+                ticker = str(h.get("ticker") or "").upper()
+                if not ticker:
+                    continue
+                research = dict(research_map.get(ticker) or {})
+                quote = dict(research.get("quote") or {})
+                technical = dict(research.get("technical") or {})
+                fundamental = dict(research.get("fundamental") or {})
+                holding_research.append(
+                    {
+                        "ticker": ticker,
+                        "name": h.get("name"),
+                        "weight": h.get("weight"),
+                        "resolved_ticker": research.get("resolved_ticker"),
+                        "current_price_usd": quote.get("current_price"),
+                        "day_change_pct": quote.get("day_change_pct"),
+                        "rsi14": technical.get("rsi14"),
+                        "ma20_gap_pct": technical.get("ma20_gap_pct"),
+                        "momentum_20d_pct": technical.get("momentum_20d_pct"),
+                        "trailing_pe": fundamental.get("trailing_pe"),
+                        "forward_pe": fundamental.get("forward_pe"),
+                        "price_to_book": fundamental.get("price_to_book"),
+                        "market_cap": fundamental.get("market_cap"),
+                        "beta": fundamental.get("beta"),
+                        "profit_margin": fundamental.get("profit_margin"),
+                    }
+                )
+        except Exception as exc:
+            logger.warning("Holding research enrichment failed: %s", exc)
 
     return {
         "generated_at": _utc_now().isoformat(),
         "summary": summary,
         "series_tail": series_tail,
         "holdings_snapshot": holdings_snapshot_dict,
-        "holdings": [h.model_dump() for h in holdings],
+        "holdings": holdings_payload,
+        "holding_research": holding_research,
         "holdings_totals": {
             "total_value": holdings_snapshot_dict.get("total_value"),
             "total_cost_basis": holdings_snapshot_dict.get("total_cost_basis"),
@@ -2078,7 +2121,8 @@ async def generate_portfolio_insights(context: dict[str, Any]) -> dict[str, Any]
                 "content": (
                     "You are LNZ AI portfolio copilot. Return strict JSON with keys "
                     "summary, key_risks, key_opportunities, suggestions, watchlist. "
-                    "Use risk_profile, risk_policy, holdings, weekly performance, and news impact. "
+                    "Use risk_profile, risk_policy, holdings, holding_research (valuation + fundamentals), "
+                    "weekly performance, and news impact. "
                     "For each suggestion include action, ticker, confidence, rationale, size_hint, "
                     "signal_type, time_horizon, risk_score, catalyst, portfolio_role, "
                     "portfolio_fit_score, portfolio_fit_rationale. "
@@ -2271,7 +2315,8 @@ async def chat_with_portfolio(
             "role": "system",
             "content": (
                 "You are LNZ AI portfolio assistant. Use the provided portfolio context deeply, including "
-                "weekly series trends, holdings details, risk thresholds, explicit risk_profile/risk_policy, "
+                "weekly series trends, holdings details, holding_research fundamentals, "
+                "risk thresholds, explicit risk_profile/risk_policy, "
                 "and ranked news impact. "
                 "Form an independent professional opinion; do not agree with the user by default. "
                 "If user assumptions conflict with the data, say so directly and explain why. "
@@ -2433,7 +2478,8 @@ async def generate_dashboard_recommendations(context: dict[str, Any]) -> dict[st
                     "You are an institutional portfolio optimizer. Return strict JSON with key recommendations. "
                     "Each recommendation must include title, risk_level (Low/Medium/High), category, triggers, "
                     "explanation, supporting_metrics, actions, confidence (0..1). "
-                    "Provide 4 to 8 actionable weekly recommendations with ticker-level sizing ideas."
+                    "Provide 4 to 8 actionable weekly recommendations with ticker-level sizing ideas. "
+                    "Use holding_research fundamentals/valuation to support each buy recommendation."
                 ),
             },
             {"role": "user", "content": json.dumps(compact_context)},

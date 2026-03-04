@@ -10,6 +10,7 @@ import datetime as dt
 import logging
 import math
 import time
+from urllib.parse import quote_plus
 from typing import Any
 
 import httpx
@@ -22,11 +23,14 @@ _HEADERS = {
 }
 _TIMEOUT = 12.0
 _CAD_USD_TICKER = "CAD=X"
+_YAHOO_QUERY_HOSTS = ("query1.finance.yahoo.com", "query2.finance.yahoo.com")
 
 # ─── In-memory TTL cache ─────────────────────────────────────────────────────
 
 _QUOTE_TTL_S = 300.0  # 5 minutes — balances freshness vs Yahoo rate-limiting
 _ticker_cache: dict[tuple[str, str], tuple[dict | None, float]] = {}
+_RESEARCH_TTL_S = 900.0
+_research_cache: dict[str, tuple[dict[str, Any] | None, float]] = {}
 _fx_cache: tuple[float | None, float] | None = None
 
 
@@ -45,6 +49,34 @@ def _cache_set_ticker(ticker: str, history_range: str, result: dict | None) -> N
     _ticker_cache[(ticker, history_range)] = (result, time.monotonic())
 
 
+def _cache_get_research(ticker: str) -> dict[str, Any] | None | bool:
+    key = (ticker or "").strip().upper()
+    if not key:
+        return False
+    entry = _research_cache.get(key)
+    if entry is None:
+        return False
+    result, ts = entry
+    if time.monotonic() - ts > _RESEARCH_TTL_S:
+        return False
+    return result
+
+
+def _cache_get_research_any_age(ticker: str) -> dict[str, Any] | None:
+    key = (ticker or "").strip().upper()
+    if not key:
+        return None
+    entry = _research_cache.get(key)
+    return entry[0] if entry else None
+
+
+def _cache_set_research(ticker: str, result: dict[str, Any] | None) -> None:
+    key = (ticker or "").strip().upper()
+    if not key:
+        return
+    _research_cache[key] = (result, time.monotonic())
+
+
 async def _fetch_ticker_data_once(
     ticker: str, client: httpx.AsyncClient, history_range: str = "1mo"
 ) -> dict[str, Any] | None:
@@ -52,25 +84,33 @@ async def _fetch_ticker_data_once(
     Fetch 30 days of daily closes + current quote for a single ticker candidate.
     Returns None on any fetch/parse failure.
     """
-    url = (
-        f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
-        f"?interval=1d&range={history_range}"
-    )
-    try:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        payload = resp.json()
-    except httpx.TimeoutException:
-        logger.warning("Yahoo chart timeout: ticker=%s", ticker)
-        return None
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == 404:
-            logger.debug("Yahoo chart 404: ticker=%s", ticker)
-        else:
-            logger.warning("Yahoo chart HTTP error: ticker=%s status=%d", ticker, exc.response.status_code)
-        return None
-    except Exception as exc:
-        logger.error("Yahoo chart unexpected error: ticker=%s error=%s", ticker, exc)
+    payload: dict[str, Any] | None = None
+    for host in _YAHOO_QUERY_HOSTS:
+        url = f"https://{host}/v8/finance/chart/{ticker}?interval=1d&range={history_range}"
+        try:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            payload = resp.json()
+            break
+        except httpx.TimeoutException:
+            logger.warning("Yahoo chart timeout: ticker=%s host=%s", ticker, host)
+            continue
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                logger.debug("Yahoo chart 404: ticker=%s host=%s", ticker, host)
+            else:
+                logger.debug(
+                    "Yahoo chart HTTP error: ticker=%s host=%s status=%d",
+                    ticker,
+                    host,
+                    exc.response.status_code,
+                )
+            continue
+        except Exception as exc:
+            logger.debug("Yahoo chart unexpected error: ticker=%s host=%s error=%s", ticker, host, exc)
+            continue
+
+    if payload is None:
         return None
 
     try:
@@ -140,6 +180,12 @@ def _extract_raw_value(value: Any) -> float | None:
         if isinstance(raw, (int, float)):
             f = float(raw)
             return f if math.isfinite(f) else None
+    if isinstance(value, str):
+        try:
+            f = float(value.strip().replace(",", ""))
+            return f if math.isfinite(f) else None
+        except (TypeError, ValueError):
+            return None
     return None
 
 
@@ -189,22 +235,35 @@ def _compute_technical_snapshot(history: list[dict[str, Any]], current_price: fl
 
 
 async def _fetch_quote_summary_once(
-    ticker: str, client: httpx.AsyncClient
+    ticker: str, client: httpx.AsyncClient, crumb: str | None = None
 ) -> dict[str, float | None] | None:
     modules = "summaryDetail,defaultKeyStatistics,financialData"
-    url = f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/{ticker}?modules={modules}"
-    try:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        payload = resp.json()
-    except httpx.TimeoutException:
-        logger.warning("Yahoo quoteSummary timeout: ticker=%s", ticker)
-        return None
-    except httpx.HTTPStatusError as exc:
-        logger.debug("Yahoo quoteSummary HTTP error: ticker=%s status=%d", ticker, exc.response.status_code)
-        return None
-    except Exception as exc:
-        logger.error("Yahoo quoteSummary unexpected error: ticker=%s error=%s", ticker, exc)
+    payload: dict[str, Any] | None = None
+    for host in _YAHOO_QUERY_HOSTS:
+        url = f"https://{host}/v10/finance/quoteSummary/{ticker}?modules={modules}"
+        if crumb:
+            url += f"&crumb={quote_plus(crumb)}"
+        try:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            payload = resp.json()
+            break
+        except httpx.TimeoutException:
+            logger.warning("Yahoo quoteSummary timeout: ticker=%s host=%s", ticker, host)
+            continue
+        except httpx.HTTPStatusError as exc:
+            logger.debug(
+                "Yahoo quoteSummary HTTP error: ticker=%s host=%s status=%d",
+                ticker,
+                host,
+                exc.response.status_code,
+            )
+            continue
+        except Exception as exc:
+            logger.debug("Yahoo quoteSummary unexpected error: ticker=%s host=%s error=%s", ticker, host, exc)
+            continue
+
+    if payload is None:
         return None
 
     try:
@@ -235,6 +294,131 @@ async def _fetch_quote_summary_once(
     }
 
 
+def _fundamental_has_values(data: dict[str, Any] | None) -> bool:
+    if not isinstance(data, dict):
+        return False
+    return any(v is not None for v in data.values())
+
+
+async def _ensure_yahoo_crumb(client: httpx.AsyncClient) -> str | None:
+    """
+    Yahoo fundamentals endpoints now often require a cookie + crumb pair.
+    We seed cookies via fc.yahoo.com, then retrieve crumb from test/getcrumb.
+    """
+    try:
+        await client.get("https://fc.yahoo.com")
+    except Exception as exc:
+        logger.debug("Yahoo crumb seed cookie request failed: %s", exc)
+
+    for endpoint in (
+        "https://query1.finance.yahoo.com/v1/test/getcrumb",
+        "https://query2.finance.yahoo.com/v1/test/getcrumb",
+    ):
+        try:
+            resp = await client.get(endpoint)
+            resp.raise_for_status()
+            crumb = (resp.text or "").strip()
+            # Invalid responses are typically JSON error payloads.
+            if crumb and not crumb.startswith("{"):
+                return crumb
+        except Exception as exc:
+            logger.debug("Yahoo crumb endpoint failed: endpoint=%s error=%s", endpoint, exc)
+    return None
+
+
+async def _fetch_quote_fundamental_fallback_once(
+    ticker: str,
+    client: httpx.AsyncClient,
+    crumb: str | None = None,
+) -> dict[str, float | None] | None:
+    """
+    Fallback fundamentals via Yahoo v7 quote endpoint when quoteSummary fails.
+    """
+    row: dict[str, Any] | None = None
+    for host in _YAHOO_QUERY_HOSTS:
+        url = f"https://{host}/v7/finance/quote?symbols={ticker}"
+        if crumb:
+            url += f"&crumb={quote_plus(crumb)}"
+        try:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            payload = resp.json()
+            result = (payload.get("quoteResponse") or {}).get("result") or []
+            row = result[0] if result else {}
+            if row:
+                break
+        except Exception as exc:
+            logger.debug("Yahoo quote fallback failed: ticker=%s host=%s error=%s", ticker, host, exc)
+            continue
+
+    if row is None:
+        return None
+
+    return {
+        "trailing_pe": _extract_raw_value(row.get("trailingPE")),
+        "forward_pe": _extract_raw_value(row.get("forwardPE")),
+        "price_to_book": _extract_raw_value(row.get("priceToBook")),
+        "market_cap": _extract_raw_value(row.get("marketCap")),
+        "beta": _extract_raw_value(row.get("beta")),
+        "dividend_yield": (
+            _extract_raw_value(row.get("trailingAnnualDividendYield"))
+            or _extract_raw_value(row.get("dividendYield"))
+        ),
+        "profit_margin": _extract_raw_value(row.get("profitMargins")),
+    }
+
+
+async def _fetch_ticker_research_with_client(
+    ticker: str,
+    client: httpx.AsyncClient,
+    crumb: str | None = None,
+) -> dict[str, Any] | None:
+    base_ticker = ticker.strip().upper()
+    for candidate in _ticker_candidates(base_ticker):
+        quote = await _fetch_ticker_data_once(
+            candidate,
+            client,
+            history_range="1mo",
+        )
+        if quote is None:
+            continue
+
+        fundamentals = await _fetch_quote_summary_once(candidate, client, crumb=crumb) or {}
+        if not _fundamental_has_values(fundamentals):
+            fallback = await _fetch_quote_fundamental_fallback_once(candidate, client, crumb=crumb) or {}
+            if fallback:
+                fundamentals = {
+                    "trailing_pe": fundamentals.get("trailing_pe") if isinstance(fundamentals, dict) else None,
+                    "forward_pe": fundamentals.get("forward_pe") if isinstance(fundamentals, dict) else None,
+                    "price_to_book": fundamentals.get("price_to_book") if isinstance(fundamentals, dict) else None,
+                    "market_cap": fundamentals.get("market_cap") if isinstance(fundamentals, dict) else None,
+                    "beta": fundamentals.get("beta") if isinstance(fundamentals, dict) else None,
+                    "dividend_yield": fundamentals.get("dividend_yield") if isinstance(fundamentals, dict) else None,
+                    "profit_margin": fundamentals.get("profit_margin") if isinstance(fundamentals, dict) else None,
+                }
+                for key, value in fallback.items():
+                    if fundamentals.get(key) is None:
+                        fundamentals[key] = value
+
+        # Reuse last known fundamentals for transient Yahoo misses/rate-limits.
+        cached_any = _cache_get_research_any_age(base_ticker)
+        if cached_any and isinstance(cached_any, dict):
+            cached_fund = dict(cached_any.get("fundamental") or {})
+            for key, value in cached_fund.items():
+                if fundamentals.get(key) is None and value is not None:
+                    fundamentals[key] = value
+
+        technical = _compute_technical_snapshot(quote.get("history") or [], quote["current_price"])
+        return {
+            "ticker": base_ticker,
+            "resolved_ticker": quote.get("resolved_ticker") or candidate,
+            "quote": quote,
+            "technical": technical,
+            "fundamental": fundamentals,
+        }
+    return None
+
+
 def _ticker_candidates(ticker: str) -> list[str]:
     """
     Try the original ticker first, then common exchange suffixes for symbols like VFV -> VFV.TO.
@@ -262,7 +446,7 @@ async def fetch_ticker_data(
     if cached is not False:
         return cached  # type: ignore[return-value]
 
-    async with httpx.AsyncClient(headers=_HEADERS, timeout=_TIMEOUT) as client:
+    async with httpx.AsyncClient(headers=_HEADERS, timeout=_TIMEOUT, follow_redirects=True) as client:
         for candidate in _ticker_candidates(ticker):
             data = await _fetch_ticker_data_once(
                 candidate,
@@ -283,25 +467,15 @@ async def fetch_ticker_research(ticker: str) -> dict[str, Any] | None:
     Fetch quote + technical + fundamental snapshot for a ticker.
     Returns None if ticker cannot be validated from Yahoo chart endpoint.
     """
-    async with httpx.AsyncClient(headers=_HEADERS, timeout=_TIMEOUT) as client:
-        for candidate in _ticker_candidates(ticker):
-            quote = await _fetch_ticker_data_once(
-                candidate,
-                client,
-                history_range="1mo",
-            )
-            if quote is None:
-                continue
-            fundamentals = await _fetch_quote_summary_once(candidate, client) or {}
-            technical = _compute_technical_snapshot(quote.get("history") or [], quote["current_price"])
-            return {
-                "ticker": ticker.strip().upper(),
-                "resolved_ticker": quote.get("resolved_ticker") or candidate,
-                "quote": quote,
-                "technical": technical,
-                "fundamental": fundamentals,
-            }
-    return None
+    cached = _cache_get_research(ticker)
+    if cached is not False:
+        return cached  # type: ignore[return-value]
+
+    async with httpx.AsyncClient(headers=_HEADERS, timeout=_TIMEOUT, follow_redirects=True) as client:
+        crumb = await _ensure_yahoo_crumb(client)
+        result = await _fetch_ticker_research_with_client(ticker, client, crumb=crumb)
+        _cache_set_research(ticker, result)
+        return result
 
 
 async def fetch_all_tickers(
@@ -326,8 +500,29 @@ async def fetch_batch_research(tickers: list[str]) -> dict[str, dict[str, Any] |
             continue
         seen.add(u)
         unique.append(u)
-    results = await asyncio.gather(*[fetch_ticker_research(t) for t in unique])
-    return dict(zip(unique, results))
+    out: dict[str, dict[str, Any] | None] = {}
+    missing: list[str] = []
+    for ticker in unique:
+        cached = _cache_get_research(ticker)
+        if cached is not False:
+            out[ticker] = cached  # type: ignore[assignment]
+        else:
+            missing.append(ticker)
+
+    if not missing:
+        return out
+
+    async with httpx.AsyncClient(headers=_HEADERS, timeout=_TIMEOUT, follow_redirects=True) as client:
+        crumb = await _ensure_yahoo_crumb(client)
+        results = await asyncio.gather(
+            *[_fetch_ticker_research_with_client(t, client, crumb=crumb) for t in missing]
+        )
+
+    for ticker, result in zip(missing, results):
+        _cache_set_research(ticker, result)
+        out[ticker] = result
+
+    return out
 
 
 async def fetch_usd_per_cad() -> float | None:
