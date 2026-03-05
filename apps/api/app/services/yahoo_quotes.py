@@ -235,6 +235,30 @@ def _extract_from_html_data_field(html: str, field: str) -> float | None:
     return _parse_abbrev_numeric(m.group(1))
 
 
+def _pick_best_market_cap(raw_value: float | None, field_value: float | None) -> float | None:
+    """
+    Prefer the value that best reflects headline quote market cap.
+    Some embedded JSON blobs can contain smaller unrelated marketCap-like fields.
+    """
+    if raw_value is None and field_value is None:
+        return None
+    if raw_value is None:
+        return field_value
+    if field_value is None:
+        return raw_value
+    if raw_value <= 0:
+        return field_value
+    if field_value <= 0:
+        return raw_value
+
+    ratio = max(raw_value, field_value) / min(raw_value, field_value)
+    # If they diverge heavily, pick the larger (headline value is usually correct one).
+    if ratio >= 10.0:
+        return max(raw_value, field_value)
+    # Otherwise prefer raw for precision.
+    return raw_value
+
+
 def _compute_technical_snapshot(history: list[dict[str, Any]], current_price: float) -> dict[str, float | None]:
     closes = [float(p["close"]) for p in history if isinstance(p.get("close"), (int, float))]
     if not closes:
@@ -443,9 +467,9 @@ async def _fetch_quote_page_fundamental_fallback_once(
         trailing_pe = _extract_from_html_data_field(html, "trailingPE")
     forward_pe = _extract_from_html_raw(normalized, "forwardPE")
     price_to_book = _extract_from_html_raw(normalized, "priceToBook")
-    market_cap = _extract_from_html_raw(normalized, "marketCap")
-    if market_cap is None:
-        market_cap = _extract_from_html_data_field(html, "marketCap")
+    market_cap_raw = _extract_from_html_raw(normalized, "marketCap")
+    market_cap_field = _extract_from_html_data_field(html, "marketCap")
+    market_cap = _pick_best_market_cap(market_cap_raw, market_cap_field)
     beta = _extract_from_html_raw(normalized, "beta")
     if beta is None:
         beta = _extract_from_html_data_field(html, "beta")
