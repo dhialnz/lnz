@@ -47,12 +47,22 @@ def _require_stripe_enabled() -> None:
 
 
 def _base_url_from_request(request: Request) -> str:
+    configured = (settings.PUBLIC_APP_URL or "").strip().rstrip("/")
+    if configured.startswith("http://") or configured.startswith("https://"):
+        return configured
+
     origin = (request.headers.get("origin") or "").strip().rstrip("/")
     if origin.startswith("http://") or origin.startswith("https://"):
         return origin
-    host = request.headers.get("host") or "app.alphenzi.com"
-    proto = request.headers.get("x-forwarded-proto") or request.url.scheme or "https"
-    return f"{proto}://{host}".rstrip("/")
+
+    forwarded_host = (request.headers.get("x-forwarded-host") or "").split(",")[0].strip()
+    host = (request.headers.get("host") or "").split(",")[0].strip()
+    candidate_host = forwarded_host or host
+    if candidate_host in {"api", "api:8000", "localhost:8000", "127.0.0.1:8000"}:
+        candidate_host = "app.alphenzi.com"
+
+    proto = (request.headers.get("x-forwarded-proto") or request.url.scheme or "https").split(",")[0].strip()
+    return f"{proto}://{(candidate_host or 'app.alphenzi.com')}".rstrip("/")
 
 
 def _find_or_create_customer(user: User) -> str:
@@ -140,8 +150,8 @@ def _create_checkout_url(
                 "analyst_trial_applied": "true" if apply_analyst_trial else "false",
             },
             subscription_data=subscription_data,
-            success_url=f"{base}/billing?billing=success",
-            cancel_url=f"{base}/billing?billing=cancel",
+            success_url=f"{base}/billing/success",
+            cancel_url=f"{base}/billing/cancel",
         )
     except Exception as exc:
         logger.exception("Stripe checkout create failed: %s", exc)

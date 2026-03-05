@@ -69,6 +69,8 @@ class Settings(BaseSettings):
     STRIPE_ANALYST_PRICE_ID: str = ""
     STRIPE_COMMAND_PRICE_ID: str = ""
     STRIPE_ANALYST_TRIAL_DAYS: int = 7
+    # Public app URL used for Stripe redirects (e.g. https://app.alphenzi.com)
+    PUBLIC_APP_URL: str = ""
 
     # ── API explorer ─────────────────────────────────────────────────────────
     # Set to true in production to hide /docs and /redoc endpoints.
