@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Allow: /index.html
+Allow: /guide.html
+
+Sitemap: https://alphenzi.com/sitemap.xml
