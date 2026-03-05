@@ -9,6 +9,7 @@ import asyncio
 import datetime as dt
 import logging
 import math
+import re
 import time
 from urllib.parse import quote_plus
 from typing import Any
@@ -20,10 +21,13 @@ logger = logging.getLogger("lnz.yahoo_quotes")
 _HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Accept": "application/json",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://finance.yahoo.com/",
 }
 _TIMEOUT = 12.0
 _CAD_USD_TICKER = "CAD=X"
 _YAHOO_QUERY_HOSTS = ("query1.finance.yahoo.com", "query2.finance.yahoo.com")
+_YAHOO_QUOTE_HOSTS = ("ca.finance.yahoo.com", "finance.yahoo.com")
 
 # ─── In-memory TTL cache ─────────────────────────────────────────────────────
 
@@ -32,6 +36,8 @@ _ticker_cache: dict[tuple[str, str], tuple[dict | None, float]] = {}
 _RESEARCH_TTL_S = 900.0
 _research_cache: dict[str, tuple[dict[str, Any] | None, float]] = {}
 _fx_cache: tuple[float | None, float] | None = None
+
+_RAW_NUM_PATTERN = r"([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)"
 
 
 def _cache_get_ticker(ticker: str, history_range: str) -> dict | None | bool:
@@ -187,6 +193,46 @@ def _extract_raw_value(value: Any) -> float | None:
         except (TypeError, ValueError):
             return None
     return None
+
+
+def _parse_abbrev_numeric(value: str | None) -> float | None:
+    if not value:
+        return None
+    s = str(value).strip().replace(",", "")
+    if not s:
+        return None
+    pct = s.endswith("%")
+    if pct:
+        s = s[:-1]
+    mult = 1.0
+    suffix = s[-1:].upper()
+    if suffix in {"K", "M", "B", "T"}:
+        s = s[:-1]
+        mult = {"K": 1e3, "M": 1e6, "B": 1e9, "T": 1e12}[suffix]
+    try:
+        f = float(s) * mult
+        if pct:
+            f = f / 100.0
+        return f if math.isfinite(f) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_from_html_raw(text: str, key: str) -> float | None:
+    pattern = rf'"{re.escape(key)}"\s*:\s*\{{\s*"raw"\s*:\s*{_RAW_NUM_PATTERN}'
+    m = re.search(pattern, text)
+    if not m:
+        return None
+    return _extract_raw_value(m.group(1))
+
+
+def _extract_from_html_data_field(html: str, field: str) -> float | None:
+    # Handles snippets like: data-field="marketCap" data-value="4.449T"
+    pattern = rf'data-field="{re.escape(field)}"[^>]*data-value="([^"]+)"'
+    m = re.search(pattern, html)
+    if not m:
+        return None
+    return _parse_abbrev_numeric(m.group(1))
 
 
 def _compute_technical_snapshot(history: list[dict[str, Any]], current_price: float) -> dict[str, float | None]:
@@ -368,6 +414,54 @@ async def _fetch_quote_fundamental_fallback_once(
     }
 
 
+async def _fetch_quote_page_fundamental_fallback_once(
+    ticker: str,
+    client: httpx.AsyncClient,
+) -> dict[str, float | None] | None:
+    """
+    Last-resort fallback via Yahoo quote HTML. Used only when API fundamentals fail.
+    """
+    html: str | None = None
+    for host in _YAHOO_QUOTE_HOSTS:
+        url = f"https://{host}/quote/{ticker}"
+        try:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            html = resp.text
+            if html:
+                break
+        except Exception as exc:
+            logger.debug("Yahoo quote page fallback failed: ticker=%s host=%s error=%s", ticker, host, exc)
+            continue
+
+    if not html:
+        return None
+
+    normalized = html.replace('\\"', '"')
+    trailing_pe = _extract_from_html_raw(normalized, "trailingPE")
+    if trailing_pe is None:
+        trailing_pe = _extract_from_html_data_field(html, "trailingPE")
+    forward_pe = _extract_from_html_raw(normalized, "forwardPE")
+    price_to_book = _extract_from_html_raw(normalized, "priceToBook")
+    market_cap = _extract_from_html_raw(normalized, "marketCap")
+    if market_cap is None:
+        market_cap = _extract_from_html_data_field(html, "marketCap")
+    beta = _extract_from_html_raw(normalized, "beta")
+    if beta is None:
+        beta = _extract_from_html_data_field(html, "beta")
+    profit_margin = _extract_from_html_raw(normalized, "profitMargins")
+
+    return {
+        "trailing_pe": trailing_pe,
+        "forward_pe": forward_pe,
+        "price_to_book": price_to_book,
+        "market_cap": market_cap,
+        "beta": beta,
+        "dividend_yield": None,
+        "profit_margin": profit_margin,
+    }
+
+
 async def _fetch_ticker_research_with_client(
     ticker: str,
     client: httpx.AsyncClient,
@@ -397,6 +491,15 @@ async def _fetch_ticker_research_with_client(
                     "profit_margin": fundamentals.get("profit_margin") if isinstance(fundamentals, dict) else None,
                 }
                 for key, value in fallback.items():
+                    if fundamentals.get(key) is None:
+                        fundamentals[key] = value
+
+        if not _fundamental_has_values(fundamentals):
+            html_fallback = await _fetch_quote_page_fundamental_fallback_once(candidate, client) or {}
+            if html_fallback:
+                if not isinstance(fundamentals, dict):
+                    fundamentals = {}
+                for key, value in html_fallback.items():
                     if fundamentals.get(key) is None:
                         fundamentals[key] = value
 
