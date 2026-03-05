@@ -100,7 +100,7 @@ export default function BillingPage() {
         </div>
         <div className="text-xs font-mono text-muted space-y-1">
           <p>`observer`: core portfolio tools + 1 free AI pipeline run.</p>
-          <p>`analyst`: observer + AI endpoints.</p>
+          <p>`analyst`: observer + AI endpoints (7-day trial for first subscription).</p>
           <p>`command`: analyst + multi-portfolio + weekly PDF export.</p>
         </div>
       </div>
@@ -119,7 +119,7 @@ export default function BillingPage() {
                 disabled={busy}
                 className="rounded-lg border border-accent/30 bg-accent/10 px-3 py-2 text-xs font-mono text-accent transition hover:bg-accent/20 disabled:opacity-50"
               >
-                Upgrade to Analyst ($19/mo)
+                Start Analyst Trial (7 days)
               </button>
               <button
                 onClick={() => void startUpgradeCheckout("command")}

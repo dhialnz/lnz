@@ -68,6 +68,7 @@ class Settings(BaseSettings):
     STRIPE_WEBHOOK_SECRET: str = ""
     STRIPE_ANALYST_PRICE_ID: str = ""
     STRIPE_COMMAND_PRICE_ID: str = ""
+    STRIPE_ANALYST_TRIAL_DAYS: int = 7
 
     # ── API explorer ─────────────────────────────────────────────────────────
     # Set to true in production to hide /docs and /redoc endpoints.

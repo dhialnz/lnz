@@ -109,6 +109,24 @@ def _create_checkout_url(
         ) from exc
     base = _base_url_from_request(request)
 
+    apply_analyst_trial = False
+    trial_days = max(0, int(settings.STRIPE_ANALYST_TRIAL_DAYS or 0))
+    if tier == "analyst" and trial_days > 0:
+        try:
+            prior_subs = stripe.Subscription.list(
+                customer=customer_id,
+                status="all",
+                limit=1,
+            )
+            apply_analyst_trial = len((prior_subs or {}).get("data") or []) == 0
+        except Exception:
+            # Fail closed: no trial if Stripe subscription lookup fails.
+            apply_analyst_trial = False
+
+    subscription_data: dict = {"metadata": {"clerk_id": user.clerk_id}}
+    if apply_analyst_trial:
+        subscription_data["trial_period_days"] = trial_days
+
     try:
         session = stripe.checkout.Session.create(
             mode="subscription",
@@ -116,8 +134,12 @@ def _create_checkout_url(
             line_items=[{"price": price_id, "quantity": 1}],
             allow_promotion_codes=True,
             client_reference_id=user.clerk_id,
-            metadata={"clerk_id": user.clerk_id, "target_tier": tier},
-            subscription_data={"metadata": {"clerk_id": user.clerk_id}},
+            metadata={
+                "clerk_id": user.clerk_id,
+                "target_tier": tier,
+                "analyst_trial_applied": "true" if apply_analyst_trial else "false",
+            },
+            subscription_data=subscription_data,
             success_url=f"{base}/billing?billing=success",
             cancel_url=f"{base}/billing?billing=cancel",
         )
@@ -281,7 +303,11 @@ async def stripe_webhook(
         if clerk_id:
             status = str(subscription.get("status") or "")
             tier = "observer"
-            if event_type != "customer.subscription.deleted" and status in {"active", "past_due"}:
+            if event_type != "customer.subscription.deleted" and status in {
+                "trialing",
+                "active",
+                "past_due",
+            }:
                 items = (subscription.get("items") or {}).get("data") or []
                 price_id = None
                 if items:
