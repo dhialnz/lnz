@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Portfolio Copilot — Buy/Trim/Hold Signals for Individual Investors | Alphenzi</title>
+  <meta name="description" content="An AI that knows your actual holdings, risk thresholds, and weekly performance — not a generic chatbot. Get portfolio-grounded buy/trim/hold signals, a weekly brief, and a buy watchlist." />
+  <link rel="canonical" href="https://alphenzi.com/ai-portfolio-copilot.html" />
+
+  <meta property="og:title" content="AI Portfolio Copilot — Buy/Trim/Hold Signals | Alphenzi" />
+  <meta property="og:description" content="An AI that knows your actual holdings, risk thresholds, and weekly performance. Get buy/trim/hold signals grounded in your data — not generic market commentary." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://alphenzi.com/ai-portfolio-copilot.html" />
+  <meta property="og:site_name" content="Alphenzi" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="AI Portfolio Copilot — Buy/Trim/Hold Signals | Alphenzi" />
+  <meta name="twitter:description" content="Portfolio-aware AI that knows your holdings, risk state, and weekly alpha. Get grounded buy/trim/hold signals — not generic advice." />
+
+  <meta name="theme-color" content="#0A0A0B" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="shortcut icon" href="/favicon.svg" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,300;1,9..144,400&family=DM+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is an AI portfolio copilot?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "An AI portfolio copilot is a tool that uses artificial intelligence to analyze your specific portfolio — your holdings, risk thresholds, and performance history — and surface actionable insights like buy/trim/hold signals, portfolio briefs, and risk summaries. Unlike generic AI chatbots, it has context about your actual positions before responding."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How does Alphenzi's AI know about my portfolio?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Before generating recommendations, Alphenzi's AI pipeline ingests your current holdings, weekly performance data, current drawdown state, rulebook thresholds, and recent news impact scores for your positions. The AI reasons about your specific situation — not a hypothetical generic investor."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What AI models power Alphenzi?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Alphenzi uses a provider chain: Gemini (Google) → GPT-4o mini or GPT-4o (OpenAI) → deterministic fallback. Analyst tier uses GPT-4o mini; Command tier prioritizes GPT-4o for higher reasoning quality. If AI is disabled, the deterministic rules engine still generates recommendations without sending any data to external AI providers."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Is my portfolio data sent to OpenAI or Google?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Only when AI features are enabled and you actively start the pipeline. Portfolio context (holdings list, performance data, news scores) is sent to your configured AI provider. You can use Alphenzi in deterministic-only mode to keep all data local. AI features can be disabled at any time from settings without losing any analytics functionality."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What kind of recommendations does the AI portfolio copilot make?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Alphenzi's AI generates three categories of output: (1) buy/trim/hold signals grounded in your holdings, current risk regime, and drawdown state; (2) a portfolio brief summarizing your week's performance, key risk factors, and notable position moves; and (3) a buy watchlist of tickers worth monitoring based on your existing strategy and concentration gaps. All outputs are informational only — not financial advice."
+            }
+          }
+        ]
+      },
+      {
+        "@type": "SoftwareApplication",
+        "name": "Alphenzi",
+        "applicationCategory": "FinanceApplication",
+        "operatingSystem": "Web",
+        "description": "AI portfolio copilot for individual investors. Generates buy/trim/hold signals, portfolio briefs, and buy watchlists grounded in your actual holdings, risk rulebook, and weekly performance data.",
+        "url": "https://alphenzi.com",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD",
+          "description": "Observer tier free forever. Analyst tier $19/month after 7-day trial."
+        }
+      }
+    ]
+  }
+  </script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    :root {
+      --bg: #0A0A0B; --panel: #141417; --panel-deep: #0e0e10;
+      --border: #1F1F23; --border-hi: #2a2a30;
+      --muted: #6B6B70; --subtle: #ADADB0; --text: #E8E8EC; --white: #ffffff;
+      --accent: #FF5C00; --accent-soft: #FF8A4C;
+      --positive: #22C55E; --negative: #EF4444; --caution: #F97316;
+    }
+
+    body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; overflow-x: hidden; min-height: 100vh; }
+    body::before { content: ''; position: fixed; inset: 0; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E"); pointer-events: none; z-index: 0; opacity: 0.6; }
+
+    .display { font-family: 'Fraunces', Georgia, serif; font-weight: 600; line-height: 1.06; letter-spacing: -0.025em; }
+    .mono { font-family: 'DM Mono', 'Courier New', monospace; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+    .wrap-narrow { max-width: 780px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+
+    @keyframes fadeUp { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+    .fu { animation: fadeUp 0.65s ease both; }
+    .d1 { animation-delay: 0.08s; } .d2 { animation-delay: 0.18s; } .d3 { animation-delay: 0.30s; }
+
+    nav { position: sticky; top: 0; z-index: 200; border-bottom: 1px solid var(--border); background: rgba(10,10,11,0.88); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+    .nav-row { display: flex; align-items: center; justify-content: space-between; height: 58px; }
+    .nav-logo { font-family:'Instrument Serif',Georgia,serif; font-style:italic; font-size:22px; color:var(--white); text-decoration:none; }
+    .nav-logo b { color:var(--accent); font-style:normal; font-weight:400; }
+    .nav-links { display:flex; align-items:center; gap:28px; list-style:none; }
+    .nav-links a { font-size:13px; font-weight:500; color:var(--muted); text-decoration:none; transition:color .15s; }
+    .nav-links a:hover, .nav-links a.active { color:var(--text); }
+    .nav-links a.active { color:var(--accent); }
+    .btn-nav { display:inline-flex; align-items:center; gap:6px; padding:8px 18px; border-radius:8px; font-size:13px; font-weight:600; background:var(--accent); color:#fff; text-decoration:none; transition:all .15s; }
+    .btn-nav:hover { filter:brightness(1.1); }
+
+    .btn-primary { display:inline-flex; align-items:center; gap:8px; padding:13px 26px; border-radius:10px; background:var(--accent); color:#fff; font-size:15px; font-weight:600; text-decoration:none; box-shadow:0 4px 28px rgba(255,92,0,0.3); transition:all .15s; }
+    .btn-primary:hover { filter:brightness(1.1); transform:translateY(-1px); }
+    .btn-ghost { display:inline-flex; align-items:center; gap:8px; padding:13px 24px; border-radius:10px; border:1px solid var(--border-hi); background:transparent; color:var(--subtle); font-size:15px; font-weight:500; text-decoration:none; transition:all .15s; }
+    .btn-ghost:hover { border-color:var(--muted); color:var(--text); }
+
+    section { padding:80px 0; }
+    .sec-label { display:inline-block; font-family:'DM Mono',monospace; font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:.1em; color:var(--accent); margin-bottom:16px; }
+    .sec-h { font-size:clamp(26px,3.8vw,42px); color:var(--white); margin-bottom:16px; }
+    .sec-sub { font-size:16px; line-height:1.7; color:var(--subtle); max-width:560px; }
+
+    .page-hero { padding:68px 0 60px; border-bottom:1px solid var(--border); background:linear-gradient(180deg,rgba(255,92,0,0.045) 0%,transparent 100%); }
+    .breadcrumb { font-size:13px; color:var(--muted); margin-bottom:18px; }
+    .breadcrumb a { color:var(--muted); text-decoration:none; transition:color .15s; }
+    .breadcrumb a:hover { color:var(--text); }
+    .breadcrumb span { margin:0 6px; color:var(--border-hi); }
+    .hero-tag { display:inline-flex; align-items:center; gap:8px; padding:5px 14px; border-radius:100px; border:1px solid rgba(255,92,0,0.3); background:rgba(255,92,0,0.08); font-family:'DM Mono',monospace; font-size:11px; font-weight:500; color:var(--accent-soft); margin-bottom:20px; }
+    .page-h1 { font-size:clamp(32px,4.5vw,56px); color:var(--white); margin-bottom:20px; line-height:1.08; }
+    .page-h1 em { font-style:italic; color:var(--accent); }
+    .page-sub { font-size:17px; line-height:1.7; color:var(--subtle); max-width:600px; margin-bottom:32px; }
+    .ctas { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+
+    /* AI vs generic comparison */
+    .vs-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:44px; }
+    .vs-card { border-radius:14px; border:1px solid var(--border); padding:26px 24px; }
+    .vs-card.them { background:var(--panel); }
+    .vs-card.us { background:linear-gradient(135deg,rgba(255,92,0,0.07) 0%,var(--panel) 80%); border-color:rgba(255,92,0,0.25); }
+    .vs-label { font-family:'DM Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:16px; }
+    .vs-card.us .vs-label { color:var(--accent); }
+    .vs-item { font-size:13.5px; color:var(--muted); padding:8px 0; border-bottom:1px solid var(--border); display:flex; align-items:flex-start; gap:10px; line-height:1.45; }
+    .vs-item:last-child { border-bottom:none; }
+    .vs-item.has { color:var(--subtle); }
+    .vs-item .ck { color:var(--positive); font-weight:700; flex-shrink:0; margin-top:1px; }
+    .vs-item .cx { color:rgba(255,255,255,0.15); flex-shrink:0; margin-top:1px; }
+
+    /* AI output cards (example outputs) */
+    .output-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:44px; }
+    .output-card { background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:22px 20px; }
+    .output-card-type { font-family:'DM Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--accent); margin-bottom:12px; }
+    .output-card-title { font-size:14.5px; font-weight:600; color:var(--white); margin-bottom:10px; }
+    .output-card p { font-size:13px; line-height:1.65; color:var(--muted); }
+    .output-signal { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:100px; font-family:'DM Mono',monospace; font-size:10.5px; font-weight:500; margin-bottom:10px; }
+    .output-signal.trim { background:rgba(249,115,22,0.12); border:1px solid rgba(249,115,22,0.25); color:var(--caution); }
+    .output-signal.hold { background:rgba(255,255,255,0.05); border:1px solid var(--border-hi); color:var(--subtle); }
+    .output-signal.watch { background:rgba(34,197,94,0.1); border:1px solid rgba(34,197,94,0.25); color:var(--positive); }
+
+    /* Pipeline steps */
+    .pipeline { display:flex; flex-direction:column; gap:0; border:1px solid var(--border); border-radius:12px; overflow:hidden; margin-top:44px; }
+    .pipeline-step { display:grid; grid-template-columns:56px 1fr; gap:0; border-bottom:1px solid var(--border); }
+    .pipeline-step:last-child { border-bottom:none; }
+    .pipeline-num { display:flex; align-items:center; justify-content:center; background:rgba(255,92,0,0.07); border-right:1px solid rgba(255,92,0,0.15); font-family:'DM Mono',monospace; font-size:13px; color:var(--accent); font-weight:500; }
+    .pipeline-body { padding:18px 20px; }
+    .pipeline-body h4 { font-size:14px; font-weight:600; color:var(--white); margin-bottom:5px; }
+    .pipeline-body p { font-size:13.5px; line-height:1.65; color:var(--muted); }
+
+    .feat-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:16px; overflow:hidden; margin-top:44px; }
+    .feat { background:var(--panel); padding:28px 24px; transition:background .2s; }
+    .feat:hover { background:#18181c; }
+    .feat-icon { width:38px; height:38px; border-radius:9px; background:rgba(255,92,0,0.1); border:1px solid rgba(255,92,0,0.22); display:flex; align-items:center; justify-content:center; margin-bottom:16px; color:var(--accent); }
+    .feat-h { font-size:14.5px; font-weight:600; color:var(--white); margin-bottom:8px; }
+    .feat-p { font-size:13.5px; line-height:1.65; color:var(--muted); }
+
+    .related-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin-top:24px; }
+    .related-card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:20px; text-decoration:none; transition:border-color .15s; display:block; }
+    .related-card:hover { border-color:var(--border-hi); }
+    .related-label { font-family:'DM Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.07em; color:var(--accent); margin-bottom:8px; }
+    .related-title { font-size:14px; font-weight:600; color:var(--white); margin-bottom:5px; }
+    .related-desc { font-size:13px; color:var(--muted); line-height:1.5; }
+
+    .faq-list { display:flex; flex-direction:column; gap:2px; margin-top:44px; border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+    details { background:var(--panel); border-bottom:1px solid var(--border); }
+    details:last-child { border-bottom:none; }
+    summary { display:flex; align-items:center; justify-content:space-between; padding:19px 22px; font-size:15px; font-weight:500; color:var(--text); cursor:pointer; list-style:none; user-select:none; transition:color .15s; }
+    summary:hover { color:var(--white); }
+    summary::-webkit-details-marker { display:none; }
+    summary::after { content:'+'; font-size:22px; color:var(--muted); font-weight:300; transition:transform .2s; flex-shrink:0; }
+    details[open] summary::after { transform:rotate(45deg); color:var(--accent); }
+    .faq-body { padding:0 22px 20px; font-size:14px; line-height:1.75; color:var(--muted); }
+    .faq-body em { color:var(--subtle); font-style:normal; }
+    .faq-body a { color:var(--accent); text-decoration:none; }
+    .faq-body a:hover { text-decoration:underline; }
+
+    .final-cta { position:relative; text-align:center; padding:100px 0; overflow:hidden; }
+    .final-cta::before { content:''; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:700px; height:700px; background:radial-gradient(circle,rgba(255,92,0,0.09) 0%,transparent 65%); pointer-events:none; }
+    .cta-eyebrow { font-family:'DM Mono',monospace; font-size:11.5px; color:var(--accent); text-transform:uppercase; letter-spacing:.1em; margin-bottom:20px; }
+    .cta-h { font-size:clamp(30px,4.5vw,52px); color:var(--white); margin-bottom:18px; max-width:640px; margin-left:auto; margin-right:auto; }
+    .cta-sub { font-size:16px; color:var(--subtle); margin-bottom:36px; }
+
+    footer { border-top:1px solid var(--border); padding:44px 0; }
+    .foot-row { display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:28px; }
+    .foot-logo { font-family:'Instrument Serif',Georgia,serif; font-style:italic; font-size:20px; color:var(--white); }
+    .foot-logo b { color:var(--accent); font-style:normal; font-weight:400; }
+    .foot-cols { display:flex; gap:44px; flex-wrap:wrap; }
+    .foot-col-label { font-family:'DM Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:12px; }
+    .foot-col ul { list-style:none; display:flex; flex-direction:column; gap:8px; }
+    .foot-col a { font-size:13px; color:var(--muted); text-decoration:none; transition:color .15s; }
+    .foot-col a:hover { color:var(--text); }
+    .foot-copy { font-family:'DM Mono',monospace; font-size:12px; color:var(--muted); align-self:flex-end; }
+
+    @media (max-width:960px) {
+      .vs-grid { grid-template-columns:1fr; }
+      .output-grid { grid-template-columns:1fr; }
+      .feat-grid { grid-template-columns:repeat(2,1fr); }
+      .nav-links { display:none; }
+      .pipeline-step { grid-template-columns:1fr; }
+      .pipeline-num { padding:12px 20px; justify-content:flex-start; border-right:none; border-bottom:1px solid rgba(255,92,0,0.15); }
+    }
+    @media (max-width:640px) {
+      section { padding:52px 0; }
+      .feat-grid { grid-template-columns:1fr; }
+      .related-grid { grid-template-columns:1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-row">
+    <a href="/" class="nav-logo">Alphenzi<b>.</b></a>
+    <ul class="nav-links">
+      <li><a href="/">Home</a></li>
+      <li><a href="guide.html">Setup guide</a></li>
+      <li><a href="portfolio-alpha-vs-spy.html">Alpha vs SPY</a></li>
+      <li><a href="ai-portfolio-copilot.html" class="active">AI Copilot</a></li>
+    </ul>
+    <a href="https://app.alphenzi.com" class="btn-nav">Launch App →</a>
+  </div>
+</nav>
+
+<!-- ═══════════════════ HERO ══════════════════════════════════════════════ -->
+<div class="page-hero">
+  <div class="wrap">
+    <p class="breadcrumb fu">
+      <a href="/">Alphenzi</a><span>/</span>AI Portfolio Copilot
+    </p>
+    <div class="hero-tag fu d1">AI-powered intelligence</div>
+    <h1 class="display page-h1 fu d1">
+      An AI copilot that knows<br>
+      <em>your actual portfolio.</em>
+    </h1>
+    <p class="page-sub fu d2">
+      Generic AI tools give generic answers. Alphenzi's AI pipeline ingests your holdings,
+      drawdown state, risk rulebook, and weekly performance before generating a single word.
+      The result: buy/trim/hold signals grounded in your specific situation — not
+      market commentary repackaged as advice.
+    </p>
+    <div class="ctas fu d3">
+      <a href="https://app.alphenzi.com/sign-up?redirect_url=https%3A%2F%2Fapp.alphenzi.com%2Fbilling%3Fupgrade%3Danalyst" class="btn-primary">
+        Start 7-day Analyst trial
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      <a href="guide.html" class="btn-ghost">See setup guide</a>
+    </div>
+    <p class="fu d3" style="font-family:'DM Mono',monospace;font-size:11.5px;color:var(--muted);margin-top:14px;">
+      Secure checkout · Cancel anytime · Observer tier stays free forever
+    </p>
+  </div>
+</div>
+
+<!-- ═══════════════════ PORTFOLIO-AWARE VS GENERIC ════════════════════════ -->
+<section>
+  <div class="wrap">
+    <span class="sec-label">Why context matters</span>
+    <h2 class="display sec-h">What makes Alphenzi's AI different from a chatbot.</h2>
+    <p class="sec-sub">Any AI tool can tell you that NVDA has momentum or that the Fed is dovish. What they can't do is factor in that you already hold 18% NVDA and are 2.8% from your hard-stop.</p>
+
+    <div class="vs-grid">
+      <div class="vs-card them">
+        <div class="vs-label">Generic AI tools (ChatGPT, Perplexity, etc.)</div>
+        <div class="vs-item has"><span class="ck">✓</span> Answers questions about stocks and markets</div>
+        <div class="vs-item has"><span class="ck">✓</span> Explains financial concepts</div>
+        <div class="vs-item has"><span class="ck">✓</span> Summarizes news and earnings</div>
+        <div class="vs-item"><span class="cx">—</span> Doesn't know your specific holdings</div>
+        <div class="vs-item"><span class="cx">—</span> Doesn't know your current drawdown</div>
+        <div class="vs-item"><span class="cx">—</span> Doesn't know your risk thresholds</div>
+        <div class="vs-item"><span class="cx">—</span> Doesn't know your weekly alpha trend</div>
+        <div class="vs-item"><span class="cx">—</span> Gives generically applicable answers</div>
+        <div class="vs-item"><span class="cx">—</span> Can't generate a portfolio brief</div>
+      </div>
+      <div class="vs-card us">
+        <div class="vs-label">Alphenzi AI copilot</div>
+        <div class="vs-item has"><span class="ck">✓</span> Knows your exact holdings and weights</div>
+        <div class="vs-item has"><span class="ck">✓</span> Knows your current drawdown vs your threshold</div>
+        <div class="vs-item has"><span class="ck">✓</span> Knows your risk regime (normal / defensive / hard-stop)</div>
+        <div class="vs-item has"><span class="ck">✓</span> Knows your rolling alpha trend</div>
+        <div class="vs-item has"><span class="ck">✓</span> News impact already scored for your positions</div>
+        <div class="vs-item has"><span class="ck">✓</span> Generates buy/trim/hold per position, not generically</div>
+        <div class="vs-item has"><span class="ck">✓</span> Generates a weekly portfolio brief</div>
+        <div class="vs-item has"><span class="ck">✓</span> Generates a buy watchlist based on your gaps</div>
+        <div class="vs-item has"><span class="ck">✓</span> Asks follow-up questions about your specific positions</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ EXAMPLE OUTPUTS ════════════════════════════════════ -->
+<section style="background:linear-gradient(180deg,#0d0d0f 0%,var(--bg) 100%)">
+  <div class="wrap">
+    <span class="sec-label">What the AI produces</span>
+    <h2 class="display sec-h">Three categories of output. All grounded in your data.</h2>
+    <p class="sec-sub">The AI doesn't generate commentary. It generates specific outputs anchored to your portfolio state, then lets you interrogate them in the copilot chat.</p>
+
+    <div class="output-grid">
+      <div class="output-card">
+        <div class="output-card-type">Buy / Trim / Hold signals</div>
+        <div class="output-signal trim">TRIM signal</div>
+        <div class="output-card-title">NVDA — concentration at 18.2%</div>
+        <p>Position exceeds trim threshold of 15%. Semiconductor news cycle remains constructive, but concentration risk warrants a partial reduction. Consider trimming to 14–15% on any 3–5% strength.</p>
+        <p style="margin-top:10px;font-size:12px;color:var(--muted);font-family:'DM Mono',monospace;">Based on: 18.2% weight · trim threshold 15% · positive news sentiment</p>
+      </div>
+      <div class="output-card">
+        <div class="output-card-type">Portfolio brief</div>
+        <div class="output-signal hold">NORMAL regime</div>
+        <div class="output-card-title">Weekly portfolio brief</div>
+        <p>Portfolio is at −2.1% drawdown (defensive threshold −8%). Rolling alpha is +0.7% — above the 4-week average. Two positions (AAPL, XBB.TO) have meaningful news events this week. No rule breaches detected.</p>
+        <p style="margin-top:10px;font-size:12px;color:var(--muted);font-family:'DM Mono',monospace;">Synthesizes: drawdown · alpha · news · rulebook state</p>
+      </div>
+      <div class="output-card">
+        <div class="output-card-type">Buy watchlist</div>
+        <div class="output-signal watch">WATCH</div>
+        <div class="output-card-title">Positions worth monitoring</div>
+        <p>Based on your existing tilt toward technology and your underweight in dividend-yielding equities, three tickers are worth monitoring this week as potential portfolio additions or sizing opportunities.</p>
+        <p style="margin-top:10px;font-size:12px;color:var(--muted);font-family:'DM Mono',monospace;">Based on: portfolio gaps · strategy · concentration budget</p>
+      </div>
+    </div>
+
+    <p style="margin-top:20px;font-size:13px;color:var(--muted);text-align:center;">All AI outputs are informational only and do not constitute financial, investment, or trading advice. <a href="https://app.alphenzi.com/disclaimer" style="color:var(--accent);text-decoration:none">See full disclaimer.</a></p>
+  </div>
+</section>
+
+<!-- ═══════════════════ HOW THE PIPELINE WORKS ════════════════════════════ -->
+<section>
+  <div class="wrap">
+    <span class="sec-label">Under the hood</span>
+    <h2 class="display sec-h">How the AI pipeline actually works.</h2>
+    <p class="sec-sub">The pipeline runs in a specific sequence. Context is assembled before the AI generates a single output — that's what makes it grounded rather than generic.</p>
+
+    <div class="pipeline">
+      <div class="pipeline-step">
+        <div class="pipeline-num">01</div>
+        <div class="pipeline-body">
+          <h4>Holdings &amp; prices ingested</h4>
+          <p>Your current holdings, live prices, allocation weights, day/week changes, and cost basis are assembled into a structured portfolio snapshot. CAD/USD FX conversion is applied for cross-border positions.</p>
+        </div>
+      </div>
+      <div class="pipeline-step">
+        <div class="pipeline-num">02</div>
+        <div class="pipeline-body">
+          <h4>Performance data attached</h4>
+          <p>Weekly alpha vs SPY, current drawdown, rolling volatility, Sharpe ratio, and your risk regime classification are all computed and attached to the context. The AI sees your actual numbers, not estimates.</p>
+        </div>
+      </div>
+      <div class="pipeline-step">
+        <div class="pipeline-num">03</div>
+        <div class="pipeline-body">
+          <h4>Rulebook thresholds loaded</h4>
+          <p>Your personalized risk rulebook — concentration limits, drawdown thresholds, volatility budget — is loaded alongside your current state. The AI knows when you're near or past a threshold before making any recommendation.</p>
+        </div>
+      </div>
+      <div class="pipeline-step">
+        <div class="pipeline-num">04</div>
+        <div class="pipeline-body">
+          <h4>News impact scores included</h4>
+          <p>News events from the past week are pre-scored against your holdings. The AI receives a filtered list of events that actually affect your positions — not a generic news feed.</p>
+        </div>
+      </div>
+      <div class="pipeline-step">
+        <div class="pipeline-num">05</div>
+        <div class="pipeline-body">
+          <h4>AI generates grounded outputs</h4>
+          <p>With full portfolio context loaded, the AI (Gemini → GPT-4o mini → deterministic fallback) generates buy/trim/hold signals, a portfolio brief, and a buy watchlist. Outputs reference your specific positions, weights, and risk state.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ FAQ ════════════════════════════════════════════════ -->
+<section style="background:linear-gradient(180deg,#0d0d0f 0%,var(--bg) 100%)">
+  <div class="wrap-narrow">
+    <span class="sec-label">FAQ</span>
+    <h2 class="display sec-h">Questions about the AI copilot.</h2>
+    <div class="faq-list">
+      <details open>
+        <summary>What is an AI portfolio copilot?</summary>
+        <div class="faq-body">An AI portfolio copilot is a tool that uses artificial intelligence to analyze your specific portfolio — your holdings, risk thresholds, and performance history — and surface actionable insights. Unlike generic AI chatbots, it has context about your actual positions before it responds. Alphenzi's copilot can answer questions about your specific holdings, explain why it flagged a position for trimming, or walk through your current risk regime.</div>
+      </details>
+      <details>
+        <summary>How does Alphenzi's AI know about my portfolio?</summary>
+        <div class="faq-body">Before generating recommendations, Alphenzi's AI pipeline ingests your current holdings, weekly performance data, current drawdown state, rulebook thresholds, and recent news impact scores for your positions. This context is assembled and sent as a structured prompt to the AI model. The AI reasons about your specific situation — not a hypothetical generic investor.</div>
+      </details>
+      <details>
+        <summary>What AI models power Alphenzi?</summary>
+        <div class="faq-body">Alphenzi uses a provider chain: <em>Gemini (Google) → GPT-4o mini (OpenAI) → deterministic fallback</em>. Analyst tier uses GPT-4o mini; Command tier prioritizes GPT-4o for deeper reasoning. If AI is disabled or unavailable, the deterministic rules engine still generates rule-based recommendations without sending any data to external AI providers. You can switch providers or disable AI at any time from Settings.</div>
+      </details>
+      <details>
+        <summary>Is my portfolio data sent to OpenAI or Google?</summary>
+        <div class="faq-body">Only when AI features are enabled and you actively start the pipeline. Portfolio context — holdings list, performance data, news impact scores — is sent to your configured AI provider for that session. You can use Alphenzi in deterministic-only mode to keep all data local. AI features can be disabled from Settings without losing any analytics or dashboard functionality. See the <a href="https://app.alphenzi.com/privacy">Privacy Policy</a> for full details.</div>
+      </details>
+      <details>
+        <summary>What kind of recommendations does the AI copilot make?</summary>
+        <div class="faq-body">The AI generates three categories: <em>(1) buy/trim/hold signals</em> grounded in your holdings, current risk regime, and drawdown state; <em>(2) a portfolio brief</em> summarizing your week's performance, key risk factors, and notable position moves; and <em>(3) a buy watchlist</em> of tickers worth monitoring based on your existing strategy and concentration gaps. All outputs are informational only — not financial advice. <a href="https://app.alphenzi.com/disclaimer">See full disclaimer.</a></div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ RELATED ════════════════════════════════════════════ -->
+<section>
+  <div class="wrap">
+    <span class="sec-label">Also worth reading</span>
+    <h2 class="display sec-h">More Alphenzi resources.</h2>
+    <div class="related-grid">
+      <a href="portfolio-alpha-vs-spy.html" class="related-card">
+        <div class="related-label">Analytics</div>
+        <div class="related-title">Portfolio Alpha vs SPY</div>
+        <div class="related-desc">The performance data that powers the AI's context — weekly alpha, rolling alpha, drawdown, and risk regime explained.</div>
+      </a>
+      <a href="wealthsimple-portfolio-tracker.html" class="related-card">
+        <div class="related-label">Wealthsimple</div>
+        <div class="related-title">Wealthsimple Portfolio Tracker</div>
+        <div class="related-desc">How to use Alphenzi's AI copilot alongside a Wealthsimple portfolio — TSX support and CAD/USD handling included.</div>
+      </a>
+      <a href="robinhood-portfolio-tracker.html" class="related-card">
+        <div class="related-label">Robinhood</div>
+        <div class="related-title">Robinhood Portfolio Tracker</div>
+        <div class="related-desc">Using Alphenzi's AI copilot with a Robinhood account — same context-aware pipeline, no brokerage access required.</div>
+      </a>
+      <a href="guide.html" class="related-card">
+        <div class="related-label">Setup</div>
+        <div class="related-title">Alphenzi Setup Guide</div>
+        <div class="related-desc">Step-by-step instructions for getting your portfolio set up, data imported, and the AI pipeline running for the first time.</div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ FINAL CTA ══════════════════════════════════════════ -->
+<div class="final-cta">
+  <div class="wrap">
+    <p class="cta-eyebrow">AI that knows your portfolio</p>
+    <h2 class="display cta-h">Stop getting generic advice.<br>Start getting grounded signals.</h2>
+    <p class="cta-sub">7-day Analyst trial. AI copilot, portfolio brief, and buy watchlist from day one.</p>
+    <a href="https://app.alphenzi.com/sign-up?redirect_url=https%3A%2F%2Fapp.alphenzi.com%2Fbilling%3Fupgrade%3Danalyst" class="btn-primary" style="font-size:16px;padding:15px 32px">
+      Start 7-day Analyst trial
+      <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </a>
+    <p style="font-family:'DM Mono',monospace;font-size:11.5px;color:var(--muted);margin-top:16px;">Card collected at checkout. Cancel before day 7 to avoid charges.</p>
+  </div>
+</div>
+
+<!-- ═══════════════════ FOOTER ══════════════════════════════════════════════ -->
+<footer>
+  <div class="wrap">
+    <div class="foot-row">
+      <span class="foot-logo">Alphenzi<b>.</b></span>
+      <div class="foot-cols">
+        <div class="foot-col">
+          <div class="foot-col-label">Product</div>
+          <ul>
+            <li><a href="/">Home</a></li>
+            <li><a href="guide.html">Setup guide</a></li>
+            <li><a href="https://app.alphenzi.com">Launch app</a></li>
+          </ul>
+        </div>
+        <div class="foot-col">
+          <div class="foot-col-label">Tools &amp; guides</div>
+          <ul>
+            <li><a href="portfolio-alpha-vs-spy.html">Alpha vs SPY tracker</a></li>
+            <li><a href="ai-portfolio-copilot.html">AI portfolio copilot</a></li>
+            <li><a href="wealthsimple-portfolio-tracker.html">Wealthsimple tracker</a></li>
+            <li><a href="robinhood-portfolio-tracker.html">Robinhood tracker</a></li>
+          </ul>
+        </div>
+        <div class="foot-col">
+          <div class="foot-col-label">Legal</div>
+          <ul>
+            <li><a href="https://app.alphenzi.com/disclaimer">Disclaimer</a></li>
+            <li><a href="https://app.alphenzi.com/privacy">Privacy</a></li>
+          </ul>
+        </div>
+      </div>
+      <span class="foot-copy">© 2026 Alphenzi · Not financial advice.</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

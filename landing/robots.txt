@@ -2,5 +2,9 @@ User-agent: *
 Allow: /
 Allow: /index.html
 Allow: /guide.html
+Allow: /portfolio-alpha-vs-spy.html
+Allow: /ai-portfolio-copilot.html
+Allow: /wealthsimple-portfolio-tracker.html
+Allow: /robinhood-portfolio-tracker.html
 
 Sitemap: https://alphenzi.com/sitemap.xml

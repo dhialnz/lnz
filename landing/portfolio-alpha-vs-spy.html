@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Portfolio Alpha vs SPY — Weekly Tracker, Rolling Alpha &amp; Drawdown | Alphenzi</title>
+  <meta name="description" content="Track your portfolio's weekly and rolling alpha against the S&amp;P 500. Alphenzi calculates alpha, cumulative outperformance, drawdown vs your thresholds, and risk regime — for any stock or ETF portfolio." />
+  <link rel="canonical" href="https://alphenzi.com/portfolio-alpha-vs-spy.html" />
+
+  <meta property="og:title" content="Portfolio Alpha vs SPY — Weekly Tracker &amp; Rolling Alpha | Alphenzi" />
+  <meta property="og:description" content="Track your portfolio's weekly and rolling alpha against the S&amp;P 500. Alphenzi calculates alpha, cumulative outperformance, and drawdown vs your thresholds." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://alphenzi.com/portfolio-alpha-vs-spy.html" />
+  <meta property="og:site_name" content="Alphenzi" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Portfolio Alpha vs SPY — Weekly Tracker | Alphenzi" />
+  <meta name="twitter:description" content="Track your portfolio's weekly alpha vs the S&amp;P 500. Cumulative alpha, rolling 4-week alpha, and drawdown vs your personalized risk thresholds." />
+
+  <meta name="theme-color" content="#0A0A0B" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="shortcut icon" href="/favicon.svg" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,300;1,9..144,400&family=DM+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is portfolio alpha?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Portfolio alpha is a measure of outperformance relative to a benchmark — in Alphenzi's case, the S&P 500 via the SPY ETF. If your portfolio returned 3.8% in a week when SPY returned 2.1%, your weekly alpha is +1.7%. Positive alpha means your stock selection added value above what passive exposure to the index would have delivered."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How does Alphenzi calculate alpha vs SPY?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Alphenzi compares your portfolio's weekly percentage return to SPY's return for the same period. Alpha = portfolio weekly return − SPY weekly return. It displays this as a single weekly figure, a rolling 4-week average, and a cumulative sum over your full history."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What is rolling alpha?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Rolling alpha is the average alpha over a moving window — Alphenzi uses a 4-week rolling window by default. It smooths out single-week noise and gives a cleaner read on whether your portfolio is systematically generating excess returns or if strong weeks are masking consistent underperformance."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What is a realistic alpha target for an individual investor?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Most individual investors underperform the index over multi-year periods. A consistently positive rolling alpha of even 0.5%–1% per week is uncommon and meaningful. Alphenzi does not prescribe targets — it shows your actual alpha so you can judge performance objectively, not based on how it feels."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How is alpha different from total portfolio returns?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Total return shows how much your portfolio gained or lost in absolute terms. Alpha shows how much of that gain was above and beyond what the market delivered passively. A 15% annual return looks strong in isolation — but if SPY returned 24% that year, your alpha is −9%. Alphenzi separates market beta from your actual stock-picking contribution."
+            }
+          }
+        ]
+      },
+      {
+        "@type": "SoftwareApplication",
+        "name": "Alphenzi",
+        "applicationCategory": "FinanceApplication",
+        "operatingSystem": "Web",
+        "description": "Portfolio intelligence platform. Track alpha vs SPY on a weekly, rolling, and cumulative basis. Monitor drawdown, volatility, Sharpe ratio, and risk regime for any stock or ETF portfolio.",
+        "url": "https://alphenzi.com",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD",
+          "description": "Observer tier free forever. Analyst tier $19/month after 7-day trial."
+        }
+      }
+    ]
+  }
+  </script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    :root {
+      --bg: #0A0A0B; --panel: #141417; --panel-deep: #0e0e10;
+      --border: #1F1F23; --border-hi: #2a2a30;
+      --muted: #6B6B70; --subtle: #ADADB0; --text: #E8E8EC; --white: #ffffff;
+      --accent: #FF5C00; --accent-soft: #FF8A4C;
+      --positive: #22C55E; --negative: #EF4444; --caution: #F97316;
+    }
+
+    body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; overflow-x: hidden; min-height: 100vh; }
+    body::before { content: ''; position: fixed; inset: 0; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E"); pointer-events: none; z-index: 0; opacity: 0.6; }
+
+    .display { font-family: 'Fraunces', Georgia, serif; font-weight: 600; line-height: 1.06; letter-spacing: -0.025em; }
+    .mono { font-family: 'DM Mono', 'Courier New', monospace; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+    .wrap-narrow { max-width: 780px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+
+    @keyframes fadeUp { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+    .fu { animation: fadeUp 0.65s ease both; }
+    .d1 { animation-delay: 0.08s; } .d2 { animation-delay: 0.18s; } .d3 { animation-delay: 0.30s; }
+
+    nav { position: sticky; top: 0; z-index: 200; border-bottom: 1px solid var(--border); background: rgba(10,10,11,0.88); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+    .nav-row { display: flex; align-items: center; justify-content: space-between; height: 58px; }
+    .nav-logo { font-family:'Instrument Serif',Georgia,serif; font-style:italic; font-size:22px; color:var(--white); text-decoration:none; }
+    .nav-logo b { color:var(--accent); font-style:normal; font-weight:400; }
+    .nav-links { display:flex; align-items:center; gap:28px; list-style:none; }
+    .nav-links a { font-size:13px; font-weight:500; color:var(--muted); text-decoration:none; transition:color .15s; }
+    .nav-links a:hover, .nav-links a.active { color:var(--text); }
+    .nav-links a.active { color:var(--accent); }
+    .btn-nav { display:inline-flex; align-items:center; gap:6px; padding:8px 18px; border-radius:8px; font-size:13px; font-weight:600; background:var(--accent); color:#fff; text-decoration:none; transition:all .15s; }
+    .btn-nav:hover { filter:brightness(1.1); }
+
+    .btn-primary { display:inline-flex; align-items:center; gap:8px; padding:13px 26px; border-radius:10px; background:var(--accent); color:#fff; font-size:15px; font-weight:600; text-decoration:none; box-shadow:0 4px 28px rgba(255,92,0,0.3); transition:all .15s; }
+    .btn-primary:hover { filter:brightness(1.1); transform:translateY(-1px); }
+    .btn-ghost { display:inline-flex; align-items:center; gap:8px; padding:13px 24px; border-radius:10px; border:1px solid var(--border-hi); background:transparent; color:var(--subtle); font-size:15px; font-weight:500; text-decoration:none; transition:all .15s; }
+    .btn-ghost:hover { border-color:var(--muted); color:var(--text); }
+
+    section { padding:80px 0; }
+    .sec-label { display:inline-block; font-family:'DM Mono',monospace; font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:.1em; color:var(--accent); margin-bottom:16px; }
+    .sec-h { font-size:clamp(26px,3.8vw,42px); color:var(--white); margin-bottom:16px; }
+    .sec-sub { font-size:16px; line-height:1.7; color:var(--subtle); max-width:560px; }
+
+    .page-hero { padding:68px 0 60px; border-bottom:1px solid var(--border); background:linear-gradient(180deg,rgba(255,92,0,0.045) 0%,transparent 100%); }
+    .breadcrumb { font-size:13px; color:var(--muted); margin-bottom:18px; }
+    .breadcrumb a { color:var(--muted); text-decoration:none; transition:color .15s; }
+    .breadcrumb a:hover { color:var(--text); }
+    .breadcrumb span { margin:0 6px; color:var(--border-hi); }
+    .hero-tag { display:inline-flex; align-items:center; gap:8px; padding:5px 14px; border-radius:100px; border:1px solid rgba(255,92,0,0.3); background:rgba(255,92,0,0.08); font-family:'DM Mono',monospace; font-size:11px; font-weight:500; color:var(--accent-soft); margin-bottom:20px; }
+    .page-h1 { font-size:clamp(32px,4.5vw,56px); color:var(--white); margin-bottom:20px; line-height:1.08; }
+    .page-h1 em { font-style:italic; color:var(--accent); }
+    .page-sub { font-size:17px; line-height:1.7; color:var(--subtle); max-width:600px; margin-bottom:32px; }
+    .ctas { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+
+    /* Alpha explainer cards */
+    .alpha-cards { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:44px; }
+    .alpha-card { background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:24px 20px; }
+    .alpha-card-label { font-family:'DM Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--accent); margin-bottom:12px; }
+    .alpha-card-val { font-family:'DM Mono',monospace; font-size:28px; font-weight:500; margin-bottom:12px; }
+    .alpha-card-val.pos { color:var(--positive); }
+    .alpha-card-val.neg { color:var(--negative); }
+    .alpha-card-val.neu { color:var(--accent-soft); }
+    .alpha-card p { font-size:13.5px; line-height:1.65; color:var(--muted); }
+
+    /* Metrics explainer list */
+    .metric-list { display:flex; flex-direction:column; gap:0; border:1px solid var(--border); border-radius:12px; overflow:hidden; margin-top:40px; }
+    .metric-row { display:grid; grid-template-columns:200px 1fr; gap:0; border-bottom:1px solid var(--border); }
+    .metric-row:last-child { border-bottom:none; }
+    .metric-name { padding:18px 20px; background:rgba(255,255,255,0.02); font-family:'DM Mono',monospace; font-size:12px; font-weight:500; color:var(--accent-soft); border-right:1px solid var(--border); display:flex; align-items:center; }
+    .metric-desc { padding:18px 20px; font-size:13.5px; line-height:1.65; color:var(--muted); }
+    .metric-desc em { color:var(--subtle); font-style:normal; }
+
+    .steps-list { display:grid; grid-template-columns:repeat(3,1fr); gap:44px; margin-top:52px; }
+    .step-num { font-family:'Fraunces',Georgia,serif; font-weight:300; font-size:60px; line-height:1; color:rgba(255,92,0,0.13); margin-bottom:12px; }
+    .step-h { font-size:16px; font-weight:600; color:var(--white); margin-bottom:9px; }
+    .step-p { font-size:14px; line-height:1.7; color:var(--muted); }
+
+    .related-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin-top:24px; }
+    .related-card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:20px; text-decoration:none; transition:border-color .15s; display:block; }
+    .related-card:hover { border-color:var(--border-hi); }
+    .related-label { font-family:'DM Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.07em; color:var(--accent); margin-bottom:8px; }
+    .related-title { font-size:14px; font-weight:600; color:var(--white); margin-bottom:5px; }
+    .related-desc { font-size:13px; color:var(--muted); line-height:1.5; }
+
+    .faq-list { display:flex; flex-direction:column; gap:2px; margin-top:44px; border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+    details { background:var(--panel); border-bottom:1px solid var(--border); }
+    details:last-child { border-bottom:none; }
+    summary { display:flex; align-items:center; justify-content:space-between; padding:19px 22px; font-size:15px; font-weight:500; color:var(--text); cursor:pointer; list-style:none; user-select:none; transition:color .15s; }
+    summary:hover { color:var(--white); }
+    summary::-webkit-details-marker { display:none; }
+    summary::after { content:'+'; font-size:22px; color:var(--muted); font-weight:300; transition:transform .2s; flex-shrink:0; }
+    details[open] summary::after { transform:rotate(45deg); color:var(--accent); }
+    .faq-body { padding:0 22px 20px; font-size:14px; line-height:1.75; color:var(--muted); }
+    .faq-body em { color:var(--subtle); font-style:normal; }
+    .faq-body a { color:var(--accent); text-decoration:none; }
+    .faq-body a:hover { text-decoration:underline; }
+
+    .final-cta { position:relative; text-align:center; padding:100px 0; overflow:hidden; }
+    .final-cta::before { content:''; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:700px; height:700px; background:radial-gradient(circle,rgba(255,92,0,0.09) 0%,transparent 65%); pointer-events:none; }
+    .cta-eyebrow { font-family:'DM Mono',monospace; font-size:11.5px; color:var(--accent); text-transform:uppercase; letter-spacing:.1em; margin-bottom:20px; }
+    .cta-h { font-size:clamp(30px,4.5vw,52px); color:var(--white); margin-bottom:18px; max-width:640px; margin-left:auto; margin-right:auto; }
+    .cta-sub { font-size:16px; color:var(--subtle); margin-bottom:36px; }
+
+    footer { border-top:1px solid var(--border); padding:44px 0; }
+    .foot-row { display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:28px; }
+    .foot-logo { font-family:'Instrument Serif',Georgia,serif; font-style:italic; font-size:20px; color:var(--white); }
+    .foot-logo b { color:var(--accent); font-style:normal; font-weight:400; }
+    .foot-cols { display:flex; gap:44px; flex-wrap:wrap; }
+    .foot-col-label { font-family:'DM Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:12px; }
+    .foot-col ul { list-style:none; display:flex; flex-direction:column; gap:8px; }
+    .foot-col a { font-size:13px; color:var(--muted); text-decoration:none; transition:color .15s; }
+    .foot-col a:hover { color:var(--text); }
+    .foot-copy { font-family:'DM Mono',monospace; font-size:12px; color:var(--muted); align-self:flex-end; }
+
+    @media (max-width:960px) {
+      .alpha-cards { grid-template-columns:1fr; }
+      .steps-list { grid-template-columns:1fr; gap:32px; }
+      .metric-row { grid-template-columns:1fr; }
+      .metric-name { border-right:none; border-bottom:1px solid var(--border); }
+      .nav-links { display:none; }
+    }
+    @media (max-width:640px) {
+      section { padding:52px 0; }
+      .related-grid { grid-template-columns:1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-row">
+    <a href="/" class="nav-logo">Alphenzi<b>.</b></a>
+    <ul class="nav-links">
+      <li><a href="/">Home</a></li>
+      <li><a href="guide.html">Setup guide</a></li>
+      <li><a href="portfolio-alpha-vs-spy.html" class="active">Alpha vs SPY</a></li>
+      <li><a href="ai-portfolio-copilot.html">AI Copilot</a></li>
+    </ul>
+    <a href="https://app.alphenzi.com" class="btn-nav">Launch App →</a>
+  </div>
+</nav>
+
+<!-- ═══════════════════ HERO ══════════════════════════════════════════════ -->
+<div class="page-hero">
+  <div class="wrap">
+    <p class="breadcrumb fu">
+      <a href="/">Alphenzi</a><span>/</span>Portfolio Alpha vs SPY
+    </p>
+    <div class="hero-tag fu d1">Performance analytics</div>
+    <h1 class="display page-h1 fu d1">
+      Track your portfolio alpha<br>
+      vs SPY — <em>weekly, rolling, cumulative.</em>
+    </h1>
+    <p class="page-sub fu d2">
+      Alpha is the only metric that separates your stock-picking skill from passive market
+      exposure. Alphenzi calculates your portfolio's alpha vs the S&amp;P 500 every week and
+      surfaces it as a weekly figure, a rolling 4-week average, and a cumulative total over
+      your full history.
+    </p>
+    <div class="ctas fu d3">
+      <a href="https://app.alphenzi.com/sign-up?redirect_url=https%3A%2F%2Fapp.alphenzi.com%2Fbilling%3Fupgrade%3Danalyst" class="btn-primary">
+        Start 7-day Analyst trial
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      <a href="guide.html" class="btn-ghost">See setup guide</a>
+    </div>
+    <p class="fu d3" style="font-family:'DM Mono',monospace;font-size:11.5px;color:var(--muted);margin-top:14px;">
+      Secure checkout · Cancel anytime · Observer tier stays free forever
+    </p>
+  </div>
+</div>
+
+<!-- ═══════════════════ ALPHA EXPLAINER ════════════════════════════════════ -->
+<section>
+  <div class="wrap">
+    <span class="sec-label">Understanding alpha</span>
+    <h2 class="display sec-h">Alpha is the number your brokerage app doesn't show you.</h2>
+    <p class="sec-sub">Your brokerage reports returns. Alpha tells you whether those returns beat what the market handed out for free. It's the only measure that separates skill from luck.</p>
+
+    <div class="alpha-cards">
+      <div class="alpha-card">
+        <div class="alpha-card-label">Example: Week in which SPY +2.1%</div>
+        <div class="alpha-card-val pos">+1.6% α</div>
+        <p>Your portfolio returned +3.7%, SPY returned +2.1% — your weekly alpha is <strong style="color:var(--subtle)">+1.6%</strong>. You outperformed the passive index by 1.6 percentage points this week.</p>
+      </div>
+      <div class="alpha-card">
+        <div class="alpha-card-label">Example: Week in which SPY −1.4%</div>
+        <div class="alpha-card-val neg">−0.9% α</div>
+        <p>Your portfolio fell −2.3%, SPY fell −1.4% — your weekly alpha is <strong style="color:var(--subtle)">−0.9%</strong>. The market was down, but you were down more. Alpha captures that underperformance.</p>
+      </div>
+      <div class="alpha-card">
+        <div class="alpha-card-label">Rolling 4-week alpha</div>
+        <div class="alpha-card-val neu">+0.7% avg</div>
+        <p>Alphenzi smooths weekly volatility into a 4-week rolling average. A consistent positive rolling alpha is a stronger signal than any single week — and harder to achieve than it looks.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ METRICS ALPHENZI TRACKS ════════════════════════════ -->
+<section style="background:linear-gradient(180deg,#0d0d0f 0%,var(--bg) 100%)">
+  <div class="wrap">
+    <span class="sec-label">What Alphenzi tracks</span>
+    <h2 class="display sec-h">Alpha is one of eight performance metrics on your dashboard.</h2>
+    <p class="sec-sub">Every metric Alphenzi tracks links back to how your portfolio is performing relative to its own history and to the market.</p>
+
+    <div class="metric-list">
+      <div class="metric-row">
+        <div class="metric-name">Weekly alpha</div>
+        <div class="metric-desc">Your portfolio's return minus SPY's return for the same 7-day period. The raw, unsmoothed outperformance (or underperformance) signal for each week.</div>
+      </div>
+      <div class="metric-row">
+        <div class="metric-name">Rolling 4W alpha</div>
+        <div class="metric-desc">The average weekly alpha over the last four weeks. Filters noise and reveals whether outperformance is structural or a single-week event.</div>
+      </div>
+      <div class="metric-row">
+        <div class="metric-name">Cumulative alpha</div>
+        <div class="metric-desc">The running total of all weekly alphas since you started tracking. Shows whether you've added or destroyed value over your full history relative to simply holding SPY.</div>
+      </div>
+      <div class="metric-row">
+        <div class="metric-name">Drawdown from peak</div>
+        <div class="metric-desc">Live percentage decline from your portfolio's all-time high. Compared against your own defensive threshold and hard-stop level, not generic benchmarks.</div>
+      </div>
+      <div class="metric-row">
+        <div class="metric-name">8W rolling volatility</div>
+        <div class="metric-desc">The annualized standard deviation of your weekly returns over the past 8 weeks. Tracks whether your portfolio is taking on more or less risk over time.</div>
+      </div>
+      <div class="metric-row">
+        <div class="metric-name">Sharpe &amp; Sortino ratios</div>
+        <div class="metric-desc">Risk-adjusted return metrics. <em>Sharpe</em> penalizes all volatility; <em>Sortino</em> penalizes only downside volatility. Both update weekly as new data arrives.</div>
+      </div>
+      <div class="metric-row">
+        <div class="metric-name">Beta vs SPY</div>
+        <div class="metric-desc">How sensitive your portfolio is to S&amp;P 500 moves. Beta &gt;1 means you amplify market moves; beta &lt;1 means you dampen them. Relevant context for interpreting your alpha.</div>
+      </div>
+      <div class="metric-row">
+        <div class="metric-name">CAGR</div>
+        <div class="metric-desc">Compound annual growth rate of your portfolio, calculated from your weekly total value history. A clean long-run performance number to compare against published benchmarks.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ HOW IT WORKS ══════════════════════════════════════ -->
+<section>
+  <div class="wrap">
+    <span class="sec-label">How to start tracking</span>
+    <h2 class="display sec-h">Alpha tracking in three steps.</h2>
+    <p class="sec-sub">Alphenzi needs two inputs: your holdings (for live pricing) and weekly portfolio totals (for historical alpha). Both take minutes to set up.</p>
+
+    <div class="steps-list">
+      <div>
+        <div class="step-num">01</div>
+        <h3 class="step-h">Enter your holdings</h3>
+        <p class="step-p">Add your stock and ETF positions to Alphenzi's Holdings page — ticker, share count, and cost basis. Supports NYSE and TSX tickers. Live prices are fetched automatically from Yahoo Finance. <a href="wealthsimple-portfolio-tracker.html" style="color:var(--accent);text-decoration:none">Works with Wealthsimple</a>, <a href="robinhood-portfolio-tracker.html" style="color:var(--accent);text-decoration:none">Robinhood</a>, and any other brokerage.</p>
+      </div>
+      <div>
+        <div class="step-num">02</div>
+        <h3 class="step-h">Upload weekly portfolio values</h3>
+        <p class="step-p">Import an Excel file with your weekly total portfolio value, net deposits, and SPY's return for each week. This is the dataset Alphenzi uses to calculate alpha, drawdown, Sharpe ratio, and cumulative performance. Download the column template from the <a href="guide.html" style="color:var(--accent);text-decoration:none">setup guide</a>.</p>
+      </div>
+      <div>
+        <div class="step-num">03</div>
+        <h3 class="step-h">Read your alpha dashboard</h3>
+        <p class="step-p">Your dashboard auto-populates with all eight metrics, four performance charts (value vs peak, drawdown, rolling alpha, rolling volatility), and a risk regime classification. Add new weeks manually or via Excel as each week closes.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ FAQ ════════════════════════════════════════════════ -->
+<section style="background:linear-gradient(180deg,#0d0d0f 0%,var(--bg) 100%)">
+  <div class="wrap-narrow">
+    <span class="sec-label">FAQ</span>
+    <h2 class="display sec-h">Questions about alpha tracking.</h2>
+    <div class="faq-list">
+      <details open>
+        <summary>What is portfolio alpha?</summary>
+        <div class="faq-body">Portfolio alpha is a measure of outperformance relative to a benchmark. In Alphenzi's case, the benchmark is the S&amp;P 500 via SPY. If your portfolio returned 3.8% in a week when SPY returned 2.1%, your weekly alpha is <em>+1.7%</em>. Positive alpha means your stock selection added value above what passive exposure would have delivered. Negative alpha means the index beat you.</div>
+      </details>
+      <details>
+        <summary>How does Alphenzi calculate alpha vs SPY?</summary>
+        <div class="faq-body">Alphenzi calculates alpha as: <em>portfolio weekly return − SPY weekly return</em>. Both figures are sourced from your imported data and Yahoo Finance's SPY history, respectively. The formula is straightforward: it measures excess return, not risk-adjusted excess return (that's what the Sharpe ratio handles separately).</div>
+      </details>
+      <details>
+        <summary>What is rolling alpha and why does it matter?</summary>
+        <div class="faq-body">Rolling alpha is the average of the last four weekly alphas. A single week's alpha can be driven by luck or a single outlier position. Rolling alpha shows whether outperformance is consistent or concentrated in one event. A portfolio with steady <em>+0.5% rolling alpha</em> is a stronger signal than one that had <em>+4%</em> one week and <em>−3%</em> the next three.</div>
+      </details>
+      <details>
+        <summary>What is a realistic alpha target for an individual investor?</summary>
+        <div class="faq-body">Research consistently shows that most active individual investors underperform the index over multi-year periods after costs. Alphenzi does not prescribe targets — it gives you the number so you can evaluate objectively whether your active decisions are paying off, and make informed choices about allocation, strategy, or risk budget.</div>
+      </details>
+      <details>
+        <summary>How is alpha different from total portfolio returns?</summary>
+        <div class="faq-body">Total return shows absolute gain or loss. Alpha shows how much of that return was above and beyond what the market delivered for free. A <em>+15% annual return</em> looks strong in isolation — but if SPY returned <em>+24%</em> that year, your alpha is <em>−9%</em>. Alpha isolates skill from beta (market exposure) and is the only fair way to evaluate active stock-picking decisions.</div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ RELATED ════════════════════════════════════════════ -->
+<section>
+  <div class="wrap">
+    <span class="sec-label">Also worth reading</span>
+    <h2 class="display sec-h">More Alphenzi resources.</h2>
+    <div class="related-grid">
+      <a href="ai-portfolio-copilot.html" class="related-card">
+        <div class="related-label">AI Features</div>
+        <div class="related-title">AI Portfolio Copilot — Buy/Trim/Hold Signals</div>
+        <div class="related-desc">After tracking alpha, let the AI tell you what to do with that information — buy/trim/hold signals grounded in your specific holdings and risk state.</div>
+      </a>
+      <a href="wealthsimple-portfolio-tracker.html" class="related-card">
+        <div class="related-label">Wealthsimple</div>
+        <div class="related-title">Wealthsimple Portfolio Tracker</div>
+        <div class="related-desc">How to use Alphenzi alongside your Wealthsimple account — including TSX support and CAD/USD dual currency handling.</div>
+      </a>
+      <a href="robinhood-portfolio-tracker.html" class="related-card">
+        <div class="related-label">Robinhood</div>
+        <div class="related-title">Robinhood Portfolio Tracker</div>
+        <div class="related-desc">Using Alphenzi's alpha tracking with a Robinhood portfolio. No brokerage connection required.</div>
+      </a>
+      <a href="guide.html" class="related-card">
+        <div class="related-label">Setup</div>
+        <div class="related-title">Alphenzi Setup Guide</div>
+        <div class="related-desc">Step-by-step instructions for importing your data in the correct format and getting your alpha charts live in under 10 minutes.</div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ FINAL CTA ══════════════════════════════════════════ -->
+<div class="final-cta">
+  <div class="wrap">
+    <p class="cta-eyebrow">Stop guessing. Start measuring.</p>
+    <h2 class="display cta-h">Know your alpha. Every week.</h2>
+    <p class="cta-sub">7-day Analyst trial. Full alpha tracking, drawdown monitoring, and AI features from day one.</p>
+    <a href="https://app.alphenzi.com/sign-up?redirect_url=https%3A%2F%2Fapp.alphenzi.com%2Fbilling%3Fupgrade%3Danalyst" class="btn-primary" style="font-size:16px;padding:15px 32px">
+      Start 7-day Analyst trial
+      <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </a>
+    <p style="font-family:'DM Mono',monospace;font-size:11.5px;color:var(--muted);margin-top:16px;">Card collected at checkout. Cancel before day 7 to avoid charges.</p>
+  </div>
+</div>
+
+<!-- ═══════════════════ FOOTER ══════════════════════════════════════════════ -->
+<footer>
+  <div class="wrap">
+    <div class="foot-row">
+      <span class="foot-logo">Alphenzi<b>.</b></span>
+      <div class="foot-cols">
+        <div class="foot-col">
+          <div class="foot-col-label">Product</div>
+          <ul>
+            <li><a href="/">Home</a></li>
+            <li><a href="guide.html">Setup guide</a></li>
+            <li><a href="https://app.alphenzi.com">Launch app</a></li>
+          </ul>
+        </div>
+        <div class="foot-col">
+          <div class="foot-col-label">Tools &amp; guides</div>
+          <ul>
+            <li><a href="portfolio-alpha-vs-spy.html">Alpha vs SPY tracker</a></li>
+            <li><a href="ai-portfolio-copilot.html">AI portfolio copilot</a></li>
+            <li><a href="wealthsimple-portfolio-tracker.html">Wealthsimple tracker</a></li>
+            <li><a href="robinhood-portfolio-tracker.html">Robinhood tracker</a></li>
+          </ul>
+        </div>
+        <div class="foot-col">
+          <div class="foot-col-label">Legal</div>
+          <ul>
+            <li><a href="https://app.alphenzi.com/disclaimer">Disclaimer</a></li>
+            <li><a href="https://app.alphenzi.com/privacy">Privacy</a></li>
+          </ul>
+        </div>
+      </div>
+      <span class="foot-copy">© 2026 Alphenzi · Not financial advice.</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

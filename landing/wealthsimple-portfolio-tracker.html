@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wealthsimple Portfolio Tracker — Alpha, Drawdown &amp; AI Analysis | Alphenzi</title>
+  <meta name="description" content="Wealthsimple tracks prices. Alphenzi tracks performance. Add weekly alpha vs SPY, drawdown monitoring, and an AI portfolio copilot to your Wealthsimple portfolio — no brokerage connection needed." />
+  <link rel="canonical" href="https://alphenzi.com/wealthsimple-portfolio-tracker.html" />
+
+  <meta property="og:title" content="Wealthsimple Portfolio Tracker — Alpha, Drawdown &amp; AI Analysis | Alphenzi" />
+  <meta property="og:description" content="Wealthsimple tracks prices. Alphenzi tracks performance. Add weekly alpha vs SPY, drawdown monitoring, and an AI portfolio copilot to your Wealthsimple portfolio." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://alphenzi.com/wealthsimple-portfolio-tracker.html" />
+  <meta property="og:site_name" content="Alphenzi" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Wealthsimple Portfolio Tracker — Alpha &amp; AI Analysis | Alphenzi" />
+  <meta name="twitter:description" content="Add weekly alpha vs SPY, drawdown monitoring, and an AI portfolio copilot to your Wealthsimple portfolio." />
+
+  <meta name="theme-color" content="#0A0A0B" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="shortcut icon" href="/favicon.svg" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,300;1,9..144,400&family=DM+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Does Alphenzi connect directly to Wealthsimple?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. Alphenzi never connects to your brokerage. You export your positions from Wealthsimple as a CSV or enter holdings manually. Your account credentials, account numbers, and real-time balances are never seen or stored by Alphenzi."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How do I export my portfolio from Wealthsimple?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "In the Wealthsimple app or web platform, navigate to Account → Documents to find account statements, or use the Activity export for transaction history. You can also simply enter your current holdings manually in Alphenzi's Holdings page — ticker, share count, and purchase price is all that's needed."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does Alphenzi support Canadian stocks and TSX ETFs?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Alphenzi supports any ticker available on Yahoo Finance, including TSX-listed stocks and ETFs with .TO and .V suffixes. CAD/USD currency conversion is handled automatically using live FX rates, so you can hold cross-border positions and view totals in either currency."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does it work with TFSA and RRSP accounts?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Alphenzi is account-type agnostic — you manage your holdings list regardless of whether positions are held in a TFSA, RRSP, FHSA, or non-registered account. Alphenzi tracks performance, not account structure."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What is the difference between Wealthsimple's performance view and alpha?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Wealthsimple shows your dollar and percentage returns. Alphenzi computes alpha: the difference between your portfolio's return and what SPY (S&P 500) returned in the same period. A positive alpha means you outperformed the market; negative means you lagged it. That distinction separates active skill from passive market exposure."
+            }
+          }
+        ]
+      },
+      {
+        "@type": "SoftwareApplication",
+        "name": "Alphenzi",
+        "applicationCategory": "FinanceApplication",
+        "operatingSystem": "Web",
+        "description": "Portfolio intelligence platform. Track alpha vs SPY, monitor drawdown, and get AI-powered buy/trim/hold signals for any stock or ETF portfolio including Wealthsimple holdings.",
+        "url": "https://alphenzi.com",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD",
+          "description": "Observer tier free forever. Analyst tier $19/month after 7-day trial."
+        }
+      }
+    ]
+  }
+  </script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    :root {
+      --bg: #0A0A0B; --panel: #141417; --panel-deep: #0e0e10;
+      --border: #1F1F23; --border-hi: #2a2a30;
+      --muted: #6B6B70; --subtle: #ADADB0; --text: #E8E8EC; --white: #ffffff;
+      --accent: #FF5C00; --accent-soft: #FF8A4C;
+      --positive: #22C55E; --negative: #EF4444; --caution: #F97316;
+    }
+
+    body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; overflow-x: hidden; min-height: 100vh; }
+    body::before { content: ''; position: fixed; inset: 0; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E"); pointer-events: none; z-index: 0; opacity: 0.6; }
+
+    .display { font-family: 'Fraunces', Georgia, serif; font-weight: 600; line-height: 1.06; letter-spacing: -0.025em; }
+    .mono { font-family: 'DM Mono', 'Courier New', monospace; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+    .wrap-narrow { max-width: 780px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+
+    @keyframes fadeUp { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+    .fu { animation: fadeUp 0.65s ease both; }
+    .d1 { animation-delay: 0.08s; } .d2 { animation-delay: 0.18s; } .d3 { animation-delay: 0.30s; }
+
+    nav { position: sticky; top: 0; z-index: 200; border-bottom: 1px solid var(--border); background: rgba(10,10,11,0.88); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+    .nav-row { display: flex; align-items: center; justify-content: space-between; height: 58px; }
+    .nav-logo { font-family:'Instrument Serif',Georgia,serif; font-style:italic; font-size:22px; color:var(--white); text-decoration:none; }
+    .nav-logo b { color:var(--accent); font-style:normal; font-weight:400; }
+    .nav-links { display:flex; align-items:center; gap:28px; list-style:none; }
+    .nav-links a { font-size:13px; font-weight:500; color:var(--muted); text-decoration:none; transition:color .15s; }
+    .nav-links a:hover { color:var(--text); }
+    .btn-nav { display:inline-flex; align-items:center; gap:6px; padding:8px 18px; border-radius:8px; font-size:13px; font-weight:600; background:var(--accent); color:#fff; text-decoration:none; transition:all .15s; }
+    .btn-nav:hover { filter:brightness(1.1); }
+
+    .btn-primary { display:inline-flex; align-items:center; gap:8px; padding:13px 26px; border-radius:10px; background:var(--accent); color:#fff; font-size:15px; font-weight:600; text-decoration:none; box-shadow:0 4px 28px rgba(255,92,0,0.3); transition:all .15s; }
+    .btn-primary:hover { filter:brightness(1.1); transform:translateY(-1px); }
+    .btn-ghost { display:inline-flex; align-items:center; gap:8px; padding:13px 24px; border-radius:10px; border:1px solid var(--border-hi); background:transparent; color:var(--subtle); font-size:15px; font-weight:500; text-decoration:none; transition:all .15s; }
+    .btn-ghost:hover { border-color:var(--muted); color:var(--text); }
+
+    section { padding:80px 0; }
+    .sec-label { display:inline-block; font-family:'DM Mono',monospace; font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:.1em; color:var(--accent); margin-bottom:16px; }
+    .sec-h { font-size:clamp(26px,3.8vw,42px); color:var(--white); margin-bottom:16px; }
+    .sec-sub { font-size:16px; line-height:1.7; color:var(--subtle); max-width:560px; }
+
+    .page-hero { padding:68px 0 60px; border-bottom:1px solid var(--border); background:linear-gradient(180deg,rgba(255,92,0,0.045) 0%,transparent 100%); }
+    .breadcrumb { font-size:13px; color:var(--muted); margin-bottom:18px; }
+    .breadcrumb a { color:var(--muted); text-decoration:none; transition:color .15s; }
+    .breadcrumb a:hover { color:var(--text); }
+    .breadcrumb span { margin:0 6px; color:var(--border-hi); }
+    .hero-tag { display:inline-flex; align-items:center; gap:8px; padding:5px 14px; border-radius:100px; border:1px solid rgba(255,92,0,0.3); background:rgba(255,92,0,0.08); font-family:'DM Mono',monospace; font-size:11px; font-weight:500; color:var(--accent-soft); margin-bottom:20px; }
+    .page-h1 { font-size:clamp(32px,4.5vw,56px); color:var(--white); margin-bottom:20px; line-height:1.08; }
+    .page-h1 em { font-style:italic; color:var(--accent); }
+    .page-sub { font-size:17px; line-height:1.7; color:var(--subtle); max-width:600px; margin-bottom:32px; }
+    .ctas { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+
+    .vs-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:44px; }
+    .vs-card { border-radius:14px; border:1px solid var(--border); padding:26px 24px; }
+    .vs-card.them { background:var(--panel); }
+    .vs-card.us { background:linear-gradient(135deg,rgba(255,92,0,0.07) 0%,var(--panel) 80%); border-color:rgba(255,92,0,0.25); }
+    .vs-label { font-family:'DM Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:16px; }
+    .vs-card.us .vs-label { color:var(--accent); }
+    .vs-item { font-size:13.5px; color:var(--muted); padding:8px 0; border-bottom:1px solid var(--border); display:flex; align-items:flex-start; gap:10px; line-height:1.45; }
+    .vs-item:last-child { border-bottom:none; }
+    .vs-item.has { color:var(--subtle); }
+    .vs-item .ck { color:var(--positive); font-weight:700; flex-shrink:0; margin-top:1px; }
+    .vs-item .cx { color:rgba(255,255,255,0.15); flex-shrink:0; margin-top:1px; }
+
+    .steps-list { display:grid; grid-template-columns:repeat(3,1fr); gap:44px; margin-top:52px; }
+    .step-num { font-family:'Fraunces',Georgia,serif; font-weight:300; font-size:60px; line-height:1; color:rgba(255,92,0,0.13); margin-bottom:12px; }
+    .step-h { font-size:16px; font-weight:600; color:var(--white); margin-bottom:9px; }
+    .step-p { font-size:14px; line-height:1.7; color:var(--muted); }
+
+    .feat-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:16px; overflow:hidden; margin-top:44px; }
+    .feat { background:var(--panel); padding:28px 24px; transition:background .2s; }
+    .feat:hover { background:#18181c; }
+    .feat-icon { width:38px; height:38px; border-radius:9px; background:rgba(255,92,0,0.1); border:1px solid rgba(255,92,0,0.22); display:flex; align-items:center; justify-content:center; margin-bottom:16px; color:var(--accent); }
+    .feat-h { font-size:14.5px; font-weight:600; color:var(--white); margin-bottom:8px; }
+    .feat-p { font-size:13.5px; line-height:1.65; color:var(--muted); }
+
+    .related-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin-top:24px; }
+    .related-card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:20px; text-decoration:none; transition:border-color .15s; display:block; }
+    .related-card:hover { border-color:var(--border-hi); }
+    .related-label { font-family:'DM Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.07em; color:var(--accent); margin-bottom:8px; }
+    .related-title { font-size:14px; font-weight:600; color:var(--white); margin-bottom:5px; }
+    .related-desc { font-size:13px; color:var(--muted); line-height:1.5; }
+
+    .faq-list { display:flex; flex-direction:column; gap:2px; margin-top:44px; border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+    details { background:var(--panel); border-bottom:1px solid var(--border); }
+    details:last-child { border-bottom:none; }
+    summary { display:flex; align-items:center; justify-content:space-between; padding:19px 22px; font-size:15px; font-weight:500; color:var(--text); cursor:pointer; list-style:none; user-select:none; transition:color .15s; }
+    summary:hover { color:var(--white); }
+    summary::-webkit-details-marker { display:none; }
+    summary::after { content:'+'; font-size:22px; color:var(--muted); font-weight:300; transition:transform .2s; flex-shrink:0; }
+    details[open] summary::after { transform:rotate(45deg); color:var(--accent); }
+    .faq-body { padding:0 22px 20px; font-size:14px; line-height:1.75; color:var(--muted); }
+    .faq-body em { color:var(--subtle); font-style:normal; }
+    .faq-body a { color:var(--accent); text-decoration:none; }
+    .faq-body a:hover { text-decoration:underline; }
+
+    .final-cta { position:relative; text-align:center; padding:100px 0; overflow:hidden; }
+    .final-cta::before { content:''; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:700px; height:700px; background:radial-gradient(circle,rgba(255,92,0,0.09) 0%,transparent 65%); pointer-events:none; }
+    .cta-eyebrow { font-family:'DM Mono',monospace; font-size:11.5px; color:var(--accent); text-transform:uppercase; letter-spacing:.1em; margin-bottom:20px; }
+    .cta-h { font-size:clamp(30px,4.5vw,52px); color:var(--white); margin-bottom:18px; max-width:640px; margin-left:auto; margin-right:auto; }
+    .cta-sub { font-size:16px; color:var(--subtle); margin-bottom:36px; }
+
+    footer { border-top:1px solid var(--border); padding:44px 0; }
+    .foot-row { display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:28px; }
+    .foot-logo { font-family:'Instrument Serif',Georgia,serif; font-style:italic; font-size:20px; color:var(--white); }
+    .foot-logo b { color:var(--accent); font-style:normal; font-weight:400; }
+    .foot-cols { display:flex; gap:44px; flex-wrap:wrap; }
+    .foot-col-label { font-family:'DM Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:12px; }
+    .foot-col ul { list-style:none; display:flex; flex-direction:column; gap:8px; }
+    .foot-col a { font-size:13px; color:var(--muted); text-decoration:none; transition:color .15s; }
+    .foot-col a:hover { color:var(--text); }
+    .foot-copy { font-family:'DM Mono',monospace; font-size:12px; color:var(--muted); align-self:flex-end; }
+
+    @media (max-width:960px) {
+      .vs-grid { grid-template-columns:1fr; }
+      .steps-list { grid-template-columns:1fr; gap:32px; }
+      .feat-grid { grid-template-columns:repeat(2,1fr); }
+      .nav-links { display:none; }
+    }
+    @media (max-width:640px) {
+      section { padding:52px 0; }
+      .feat-grid { grid-template-columns:1fr; }
+      .related-grid { grid-template-columns:1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-row">
+    <a href="/" class="nav-logo">Alphenzi<b>.</b></a>
+    <ul class="nav-links">
+      <li><a href="/">Home</a></li>
+      <li><a href="guide.html">Setup guide</a></li>
+      <li><a href="portfolio-alpha-vs-spy.html">Alpha vs SPY</a></li>
+      <li><a href="ai-portfolio-copilot.html">AI Copilot</a></li>
+    </ul>
+    <a href="https://app.alphenzi.com" class="btn-nav">Launch App →</a>
+  </div>
+</nav>
+
+<!-- ═══════════════════ HERO ══════════════════════════════════════════════ -->
+<div class="page-hero">
+  <div class="wrap">
+    <p class="breadcrumb fu">
+      <a href="/">Alphenzi</a><span>/</span>Wealthsimple Portfolio Tracker
+    </p>
+    <div class="hero-tag fu d1">For Wealthsimple investors</div>
+    <h1 class="display page-h1 fu d1">
+      The portfolio tracker<br>
+      Wealthsimple <em>won't build you.</em>
+    </h1>
+    <p class="page-sub fu d2">
+      Wealthsimple is a great place to trade. It's not built to tell you whether you're
+      actually beating the market. Alphenzi adds weekly alpha vs SPY, real-time drawdown
+      monitoring, and an AI portfolio copilot — without touching your Wealthsimple account.
+    </p>
+    <div class="ctas fu d3">
+      <a href="https://app.alphenzi.com/sign-up?redirect_url=https%3A%2F%2Fapp.alphenzi.com%2Fbilling%3Fupgrade%3Danalyst" class="btn-primary">
+        Start 7-day Analyst trial
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      <a href="guide.html" class="btn-ghost">See setup guide</a>
+    </div>
+    <p class="fu d3" style="font-family:'DM Mono',monospace;font-size:11.5px;color:var(--muted);margin-top:14px;">
+      Secure checkout · Cancel anytime · Observer tier stays free forever
+    </p>
+  </div>
+</div>
+
+<!-- ═══════════════════ WHAT'S MISSING ════════════════════════════════════ -->
+<section>
+  <div class="wrap">
+    <span class="sec-label">The analytics gap</span>
+    <h2 class="display sec-h">What Wealthsimple shows vs what you actually need.</h2>
+    <p class="sec-sub">Wealthsimple's performance tab shows returns. Serious investors need to know whether those returns are <em>above</em> what the index delivered for free.</p>
+
+    <div class="vs-grid">
+      <div class="vs-card them">
+        <div class="vs-label">Wealthsimple shows</div>
+        <div class="vs-item has"><span class="ck">✓</span> Total account value</div>
+        <div class="vs-item has"><span class="ck">✓</span> Dollar gain / loss</div>
+        <div class="vs-item has"><span class="ck">✓</span> Percentage return (total period)</div>
+        <div class="vs-item has"><span class="ck">✓</span> Individual holding P&amp;L</div>
+        <div class="vs-item"><span class="cx">—</span> Alpha vs SPY (market outperformance)</div>
+        <div class="vs-item"><span class="cx">—</span> Drawdown from peak vs your thresholds</div>
+        <div class="vs-item"><span class="cx">—</span> Rolling volatility &amp; Sharpe ratio</div>
+        <div class="vs-item"><span class="cx">—</span> AI-powered buy / trim / hold signals</div>
+        <div class="vs-item"><span class="cx">—</span> News impact mapped to your holdings</div>
+        <div class="vs-item"><span class="cx">—</span> Personalized risk rulebook &amp; alerts</div>
+      </div>
+      <div class="vs-card us">
+        <div class="vs-label">Alphenzi adds on top</div>
+        <div class="vs-item has"><span class="ck">✓</span> Weekly alpha vs SPY — are you beating the index?</div>
+        <div class="vs-item has"><span class="ck">✓</span> Rolling 4-week alpha, cumulative alpha, regime chart</div>
+        <div class="vs-item has"><span class="ck">✓</span> Live drawdown from peak vs your defensive threshold</div>
+        <div class="vs-item has"><span class="ck">✓</span> Risk regime: normal → defensive → hard-stop</div>
+        <div class="vs-item has"><span class="ck">✓</span> 8-week rolling volatility &amp; Sharpe / Sortino ratios</div>
+        <div class="vs-item has"><span class="ck">✓</span> AI copilot grounded in your holdings &amp; risk state</div>
+        <div class="vs-item has"><span class="ck">✓</span> News events scored against your exact positions</div>
+        <div class="vs-item has"><span class="ck">✓</span> Concentration trim alerts &amp; custom thresholds</div>
+        <div class="vs-item has"><span class="ck">✓</span> CAD/USD dual currency — TSX and NYSE side by side</div>
+        <div class="vs-item has"><span class="ck">✓</span> Excel/CSV import — works with Wealthsimple exports</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ HOW TO CONNECT ════════════════════════════════════ -->
+<section style="background:linear-gradient(180deg,#0d0d0f 0%,var(--bg) 100%)">
+  <div class="wrap">
+    <span class="sec-label">Setup in minutes</span>
+    <h2 class="display sec-h">How to use Alphenzi with your Wealthsimple portfolio.</h2>
+    <p class="sec-sub">No API access. No brokerage connection. Alphenzi never sees your Wealthsimple credentials — it only sees what you give it.</p>
+
+    <div class="steps-list">
+      <div>
+        <div class="step-num">01</div>
+        <h3 class="step-h">Add your holdings</h3>
+        <p class="step-p">Enter your Wealthsimple positions manually in Alphenzi's Holdings page — ticker, share count, purchase price, and currency. For TSX stocks, add the <code style="font-family:'DM Mono',monospace;font-size:12px;color:var(--accent-soft)">.TO</code> or <code style="font-family:'DM Mono',monospace;font-size:12px;color:var(--accent-soft)">.V</code> suffix. Takes about two minutes for a typical portfolio.</p>
+      </div>
+      <div>
+        <div class="step-num">02</div>
+        <h3 class="step-h">Import weekly performance data</h3>
+        <p class="step-p">Upload an Excel file of your weekly portfolio values — total value and net deposits by week. Alphenzi uses this to compute alpha vs SPY, drawdown, Sharpe ratio, and volatility going back as far as your history runs. Download the <a href="guide.html" style="color:var(--accent);text-decoration:none">template from the setup guide</a> to see the exact column format.</p>
+      </div>
+      <div>
+        <div class="step-num">03</div>
+        <h3 class="step-h">Run your analytics</h3>
+        <p class="step-p">Once holdings and weekly data are in, your dashboard populates automatically. Hit <strong style="color:var(--subtle)">Start AI Pipeline</strong> to unlock the AI copilot, buy/trim/hold signals, and portfolio-mapped news. Refresh every Monday morning for your weekly alpha read.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ FEATURES ══════════════════════════════════════════ -->
+<section>
+  <div class="wrap">
+    <span class="sec-label">Key features</span>
+    <h2 class="display sec-h">Built for Canadian investors with cross-border portfolios.</h2>
+    <p class="sec-sub">Wealthsimple users often hold a mix of TSX and NYSE positions. Alphenzi handles both natively.</p>
+
+    <div class="feat-grid">
+      <div class="feat">
+        <div class="feat-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+        </div>
+        <h3 class="feat-h">Alpha vs SPY — weekly &amp; rolling</h3>
+        <p class="feat-p">Know every week whether your Wealthsimple portfolio beat the S&amp;P 500 or lagged it. See rolling 4-week alpha, cumulative alpha, and week-by-week attribution in a single chart.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <h3 class="feat-h">CAD/USD dual currency</h3>
+        <p class="feat-p">Hold TSX-listed ETFs and US equities side by side. Alphenzi applies live CAD/USD FX conversion to unify your portfolio into a single currency view — a feature Wealthsimple only partially supports.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        </div>
+        <h3 class="feat-h">Drawdown monitoring</h3>
+        <p class="feat-p">Track your portfolio's live drawdown from its all-time peak and compare it to your own defensive and hard-stop thresholds. The dashboard classifies your current risk regime so you always know where you stand.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </div>
+        <h3 class="feat-h">AI portfolio copilot</h3>
+        <p class="feat-p">An AI that knows your specific Wealthsimple holdings, risk thresholds, and recent performance — not a generic chatbot. Get buy/trim/hold signals grounded in your actual data, not templated advice.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+        </div>
+        <h3 class="feat-h">News mapped to your holdings</h3>
+        <p class="feat-p">Every earnings release, analyst move, and macro event is scored against your exact Wealthsimple positions. See which holdings are affected before the market moves — with AI-generated summaries.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+        <h3 class="feat-h">Privacy-first — no brokerage access</h3>
+        <p class="feat-p">Alphenzi never connects to Wealthsimple. Your account credentials, account numbers, and real-time balances are never seen. You control exactly what data enters Alphenzi and when.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ FAQ ════════════════════════════════════════════════ -->
+<section style="background:linear-gradient(180deg,#0d0d0f 0%,var(--bg) 100%)">
+  <div class="wrap-narrow">
+    <span class="sec-label">FAQ</span>
+    <h2 class="display sec-h">Common questions from Wealthsimple investors.</h2>
+    <div class="faq-list">
+      <details open>
+        <summary>Does Alphenzi connect directly to Wealthsimple?</summary>
+        <div class="faq-body">No. Alphenzi never connects to your brokerage. You export your positions from Wealthsimple as a CSV or enter holdings manually. Your account credentials, account numbers, and real-time balances are never seen or stored by Alphenzi.</div>
+      </details>
+      <details>
+        <summary>How do I export my portfolio from Wealthsimple?</summary>
+        <div class="faq-body">In the Wealthsimple app or web platform, navigate to Account → Documents to find account statements, or use the Activity export for transaction history. You can also simply enter your current holdings manually in Alphenzi's Holdings page — ticker, share count, and purchase price is all that's needed. See the <a href="guide.html">setup guide</a> for the exact steps.</div>
+      </details>
+      <details>
+        <summary>Does Alphenzi support Canadian stocks and TSX ETFs?</summary>
+        <div class="faq-body">Yes. Alphenzi supports any ticker available on Yahoo Finance, including TSX-listed stocks and ETFs with <em>.TO</em> and <em>.V</em> suffixes. CAD/USD conversion is handled automatically using live FX rates, so you can hold cross-border positions and view your total portfolio in either currency.</div>
+      </details>
+      <details>
+        <summary>Does it work with TFSA and RRSP accounts?</summary>
+        <div class="faq-body">Yes. Alphenzi is account-type agnostic — you manage your holdings list regardless of whether positions are held in a TFSA, RRSP, FHSA, or non-registered account. Alphenzi tracks performance, not account structure.</div>
+      </details>
+      <details>
+        <summary>What is the difference between Wealthsimple's performance view and alpha?</summary>
+        <div class="faq-body">Wealthsimple shows your dollar and percentage returns. Alphenzi computes <em>alpha</em>: the difference between your portfolio's return and what SPY (S&amp;P 500) returned in the same period. A positive alpha means you outperformed the market; negative means you lagged it. That distinction is what separates active skill from passive market exposure. Learn more on the <a href="portfolio-alpha-vs-spy.html">Alpha vs SPY page</a>.</div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ RELATED ════════════════════════════════════════════ -->
+<section>
+  <div class="wrap">
+    <span class="sec-label">Also worth reading</span>
+    <h2 class="display sec-h">More Alphenzi resources.</h2>
+    <div class="related-grid">
+      <a href="portfolio-alpha-vs-spy.html" class="related-card">
+        <div class="related-label">Analytics</div>
+        <div class="related-title">Portfolio Alpha vs SPY — How It Works</div>
+        <div class="related-desc">What alpha actually means, how Alphenzi calculates it weekly and on a rolling basis, and why it matters for your Wealthsimple returns.</div>
+      </a>
+      <a href="ai-portfolio-copilot.html" class="related-card">
+        <div class="related-label">AI Features</div>
+        <div class="related-title">AI Portfolio Copilot — Buy/Trim/Hold Signals</div>
+        <div class="related-desc">How Alphenzi's AI pipeline ingests your holdings and risk state to generate grounded recommendations — not generic chatbot output.</div>
+      </a>
+      <a href="robinhood-portfolio-tracker.html" class="related-card">
+        <div class="related-label">Other brokerages</div>
+        <div class="related-title">Robinhood Portfolio Tracker</div>
+        <div class="related-desc">Using Alphenzi with a Robinhood account — same analytics layer, same privacy model, no brokerage access required.</div>
+      </a>
+      <a href="guide.html" class="related-card">
+        <div class="related-label">Setup</div>
+        <div class="related-title">Alphenzi Setup Guide</div>
+        <div class="related-desc">Step-by-step instructions for importing your portfolio, configuring your risk rulebook, and running your first AI pipeline.</div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ FINAL CTA ══════════════════════════════════════════ -->
+<div class="final-cta">
+  <div class="wrap">
+    <p class="cta-eyebrow">Track what Wealthsimple doesn't</p>
+    <h2 class="display cta-h">Start measuring your alpha.</h2>
+    <p class="cta-sub">7-day Analyst trial. Full AI features from day one. Downgrade to Observer free anytime.</p>
+    <a href="https://app.alphenzi.com/sign-up?redirect_url=https%3A%2F%2Fapp.alphenzi.com%2Fbilling%3Fupgrade%3Danalyst" class="btn-primary" style="font-size:16px;padding:15px 32px">
+      Start 7-day Analyst trial
+      <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </a>
+    <p style="font-family:'DM Mono',monospace;font-size:11.5px;color:var(--muted);margin-top:16px;">Card collected at checkout. Cancel before day 7 to avoid charges.</p>
+  </div>
+</div>
+
+<!-- ═══════════════════ FOOTER ══════════════════════════════════════════════ -->
+<footer>
+  <div class="wrap">
+    <div class="foot-row">
+      <span class="foot-logo">Alphenzi<b>.</b></span>
+      <div class="foot-cols">
+        <div class="foot-col">
+          <div class="foot-col-label">Product</div>
+          <ul>
+            <li><a href="/">Home</a></li>
+            <li><a href="guide.html">Setup guide</a></li>
+            <li><a href="https://app.alphenzi.com">Launch app</a></li>
+          </ul>
+        </div>
+        <div class="foot-col">
+          <div class="foot-col-label">Tools &amp; guides</div>
+          <ul>
+            <li><a href="portfolio-alpha-vs-spy.html">Alpha vs SPY tracker</a></li>
+            <li><a href="ai-portfolio-copilot.html">AI portfolio copilot</a></li>
+            <li><a href="wealthsimple-portfolio-tracker.html">Wealthsimple tracker</a></li>
+            <li><a href="robinhood-portfolio-tracker.html">Robinhood tracker</a></li>
+          </ul>
+        </div>
+        <div class="foot-col">
+          <div class="foot-col-label">Legal</div>
+          <ul>
+            <li><a href="https://app.alphenzi.com/disclaimer">Disclaimer</a></li>
+            <li><a href="https://app.alphenzi.com/privacy">Privacy</a></li>
+          </ul>
+        </div>
+      </div>
+      <span class="foot-copy">© 2026 Alphenzi · Not financial advice.</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
