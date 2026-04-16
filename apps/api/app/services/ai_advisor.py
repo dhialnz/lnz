@@ -1880,6 +1880,204 @@ def _normalize_summary_text(value: Any, fallback: str) -> str:
     return re.sub(r"\s+", " ", raw).strip()
 
 
+def _canonicalize_portfolio_insights_section(label: str) -> str | None:
+    normalized = re.sub(r"[^a-z]+", " ", str(label or "").lower()).strip()
+    if normalized in {"summary", "overview", "insight", "insights", "message"}:
+        return "summary"
+    if normalized in {"key risk", "key risks", "risk", "risks"}:
+        return "key_risks"
+    if normalized in {"key opportunity", "key opportunities", "opportunity", "opportunities"}:
+        return "key_opportunities"
+    if normalized in {"suggestion", "suggestions", "action", "actions"}:
+        return "suggestions"
+    if normalized == "watchlist":
+        return "watchlist"
+    return None
+
+
+def _salvage_portfolio_insights_sections(text: str) -> dict[str, Any]:
+    raw = str(text or "").strip()
+    if not raw:
+        return {}
+
+    sections: dict[str, list[str]] = {}
+    current: str | None = None
+    for line in re.split(r"[\r\n]+", raw):
+        cleaned = str(line or "").strip().strip("`")
+        if not cleaned:
+            continue
+
+        header_match = re.match(
+            r"^(summary|overview|insights?|message|key risks?|risks?|key opportunities?|opportunities?|suggestions?|actions?|watchlist)\s*[:\-]\s*(.*)$",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        if header_match:
+            current = _canonicalize_portfolio_insights_section(header_match.group(1))
+            if not current:
+                continue
+            sections.setdefault(current, [])
+            remainder = header_match.group(2).strip()
+            if remainder:
+                sections[current].append(remainder)
+            continue
+
+        if current is None:
+            continue
+
+        bullet = re.sub(r"^(?:[-*]+|\u2022|\d+[.)])\s*", "", cleaned).strip()
+        if bullet:
+            sections.setdefault(current, []).append(bullet)
+
+    payload: dict[str, Any] = {}
+    if sections.get("summary"):
+        payload["summary"] = " ".join(sections["summary"])
+    if sections.get("key_risks"):
+        payload["key_risks"] = sections["key_risks"]
+    if sections.get("key_opportunities"):
+        payload["key_opportunities"] = sections["key_opportunities"]
+    if sections.get("suggestions"):
+        payload["suggestions"] = sections["suggestions"]
+    if sections.get("watchlist"):
+        payload["watchlist"] = sections["watchlist"]
+    return payload
+
+
+def _coerce_portfolio_suggestions(value: Any) -> list[dict[str, Any]]:
+    direct = _safe_suggestions(value)
+    if direct:
+        return direct
+
+    if value is None:
+        return []
+
+    items = value if isinstance(value, list) else [value]
+    rescued: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in items:
+        if isinstance(item, dict):
+            rescued.extend(_safe_suggestions([item]))
+            continue
+
+        raw = str(item or "").strip()
+        if not raw:
+            continue
+
+        mapped = _parse_loose_mapping(raw)
+        if isinstance(mapped, dict):
+            before = len(rescued)
+            rescued.extend(_safe_suggestions([mapped]))
+            if len(rescued) > before:
+                continue
+
+        lower = raw.lower()
+        action: str | None = None
+        if any(word in lower for word in _BUY_WORDS):
+            action = "buy"
+        elif any(word in lower for word in _SELL_WORDS):
+            action = "sell"
+        elif any(word in lower for word in _HOLD_WORDS):
+            action = "hold"
+
+        if not action:
+            continue
+
+        tickers = _extract_ticker_candidates(raw.upper())
+        if not tickers:
+            continue
+
+        key = (action, tickers[0])
+        if key in seen:
+            continue
+        seen.add(key)
+        rescued.append(
+            {
+                "action": action,
+                "ticker": tickers[0],
+                "confidence": 0.55,
+                "rationale": raw,
+            }
+        )
+
+    return _safe_suggestions(rescued)
+
+
+def _coerce_portfolio_watchlist(value: Any) -> list[str]:
+    if value is None:
+        return []
+
+    items = value if isinstance(value, list) else [value]
+    watchlist: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if isinstance(item, dict):
+            text = _first_text_value(item, ("ticker", "symbol", "name", "value")) or ""
+        else:
+            text = str(item or "")
+        if not text:
+            continue
+        for ticker in _extract_ticker_candidates(text.upper()):
+            if ticker in seen:
+                continue
+            seen.add(ticker)
+            watchlist.append(ticker)
+    return watchlist[:12]
+
+
+def _has_meaningful_ai_portfolio_insights(parsed: dict[str, Any], baseline: dict[str, Any]) -> bool:
+    baseline_summary = _normalize_summary_text(
+        baseline.get("summary"),
+        str(baseline.get("summary") or ""),
+    )
+    summary = _normalize_summary_text(parsed.get("summary"), "")
+    has_summary = bool(summary) and summary.lower() != baseline_summary.lower()
+    has_key_risks = bool(_normalize_structured_lines(parsed.get("key_risks"), ("risk", "issue", "threat")))
+    has_key_opportunities = bool(
+        _normalize_structured_lines(parsed.get("key_opportunities"), ("opportunity", "idea", "tailwind"))
+    )
+    has_suggestions = bool(_coerce_portfolio_suggestions(parsed.get("suggestions")))
+    has_watchlist = bool(_coerce_portfolio_watchlist(parsed.get("watchlist")))
+    return sum(
+        int(flag)
+        for flag in (has_summary, has_key_risks, has_key_opportunities, has_suggestions, has_watchlist)
+    ) >= 2
+
+
+def _coerce_portfolio_insights_payload(raw: str, baseline: dict[str, Any]) -> dict[str, Any] | None:
+    salvaged_sections = _salvage_portfolio_insights_sections(raw)
+
+    parsed = _extract_json_object(raw)
+    if isinstance(parsed, dict):
+        merged = {**salvaged_sections, **parsed}
+        if _has_meaningful_ai_portfolio_insights(merged, baseline):
+            return merged
+
+    first_brace = str(raw or "").find("{")
+    if first_brace >= 0:
+        object_blob, trailing = _extract_leading_object_blob(str(raw or "")[first_brace:])
+        if object_blob:
+            parsed = _extract_json_object(object_blob) or _parse_loose_mapping(object_blob)
+            if isinstance(parsed, dict):
+                merged = {
+                    **salvaged_sections,
+                    **_salvage_portfolio_insights_sections(trailing),
+                    **parsed,
+                }
+                if _has_meaningful_ai_portfolio_insights(merged, baseline):
+                    return merged
+
+    parsed = _parse_loose_mapping(raw)
+    if isinstance(parsed, dict):
+        merged = {**salvaged_sections, **parsed}
+        if _has_meaningful_ai_portfolio_insights(merged, baseline):
+            return merged
+
+    if _has_meaningful_ai_portfolio_insights(salvaged_sections, baseline):
+        return salvaged_sections
+
+    return None
+
+
 async def _llm_chat(
     messages: list[dict[str, str]],
     *,
@@ -2136,12 +2334,12 @@ async def generate_portfolio_insights(context: dict[str, Any]) -> dict[str, Any]
         if not raw:
             return baseline
 
-        parsed = _extract_json_object(raw)
+        parsed = _coerce_portfolio_insights_payload(raw, baseline)
         if not parsed:
             return baseline
 
-        suggestions = _safe_suggestions(parsed.get("suggestions"))
-        parsed_watchlist = [str(x).upper() for x in (parsed.get("watchlist") or baseline["watchlist"])][:12]
+        suggestions = _coerce_portfolio_suggestions(parsed.get("suggestions"))
+        parsed_watchlist = _coerce_portfolio_watchlist(parsed.get("watchlist")) or list(baseline["watchlist"])[:12]
         clean_suggestions, clean_watchlist = await _validate_suggestions_and_watchlist(
             context,
             suggestions or baseline["suggestions"],
