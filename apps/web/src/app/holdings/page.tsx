@@ -69,6 +69,35 @@ function signedPfx(v: number | null) {
   return v >= 0 ? "+" : "";
 }
 
+async function downloadHoldingsPdfReport(currency: "CAD" | "USD"): Promise<Blob> {
+  const tokenRes = await fetch("/api/auth/token", {
+    method: "GET",
+    cache: "no-store",
+    credentials: "include",
+  });
+  const tokenPayload = tokenRes.ok
+    ? (await tokenRes.json().catch(() => null)) as { token?: string | null } | null
+    : null;
+  const token =
+    typeof tokenPayload?.token === "string" && tokenPayload.token.length > 0
+      ? tokenPayload.token
+      : null;
+
+  const headers: Record<string, string> = token
+    ? { Authorization: `Bearer ${token}` }
+    : {};
+  const params = new URLSearchParams({ currency });
+  const res = await fetch(`/api/v1/reports/holdings.pdf?${params.toString()}`, {
+    method: "GET",
+    headers,
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(detail?.detail ?? `Holdings report error ${res.status}`);
+  }
+  return res.blob();
+}
+
 export default function HoldingsPage() {
   const { fromUsd, currencyLabel } = useCurrency();
   const fmtDisplayCurrency = useCallback(
@@ -97,7 +126,9 @@ export default function HoldingsPage() {
   const [snapshot, setSnapshot] = useState<HoldingsSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [secondsAgo, setSecondsAgo] = useState(0);
   const lastFetchRef = useRef<Date>(new Date());
 
@@ -127,6 +158,7 @@ export default function HoldingsPage() {
     try {
       const data = await getHoldings();
       setSnapshot(data);
+      setExportMessage(null);
       lastFetchRef.current = new Date();
       setSecondsAgo(0);
     } catch (e: unknown) {
@@ -284,6 +316,27 @@ export default function HoldingsPage() {
     await fetchHoldings();
   }
 
+  async function handleExportPdf() {
+    setExportMessage(null);
+    setExportingPdf(true);
+    try {
+      const blob = await downloadHoldingsPdfReport(currencyLabel);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `alphenzi_holdings_${currencyLabel.toLowerCase()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setExportMessage("Holdings PDF downloaded.");
+    } catch (e: unknown) {
+      setExportMessage(e instanceof Error ? e.message : "Holdings export failed.");
+    } finally {
+      setExportingPdf(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-6 animate-pulse">
@@ -331,7 +384,7 @@ export default function HoldingsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-4xl leading-none font-serif tracking-tight text-white">Holdings Terminal</h1>
           <p className="text-xs font-mono text-muted mt-0.5">
@@ -341,13 +394,29 @@ export default function HoldingsPage() {
             Yahoo prices are sourced in USD and converted to {currencyLabel} for display.
           </p>
         </div>
-        <button
-          onClick={() => fetchHoldings(true)}
-          disabled={refreshing}
-          className="text-xs font-mono text-accent border border-accent/30 rounded px-3 py-1.5 hover:bg-accent/10 transition-colors disabled:opacity-40"
-        >
-          {refreshing ? "..." : "Refresh"}
-        </button>
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleExportPdf}
+              disabled={exportingPdf || !snapshot || snapshot.holdings.length === 0}
+              className="text-xs font-mono text-accent border border-accent/30 rounded px-3 py-1.5 hover:bg-accent/10 transition-colors disabled:opacity-40"
+            >
+              {exportingPdf ? "Preparing PDF..." : "Export Holdings PDF"}
+            </button>
+            <button
+              onClick={() => fetchHoldings(true)}
+              disabled={refreshing}
+              className="text-xs font-mono text-accent border border-accent/30 rounded px-3 py-1.5 hover:bg-accent/10 transition-colors disabled:opacity-40"
+            >
+              {refreshing ? "..." : "Refresh"}
+            </button>
+          </div>
+          {exportMessage && (
+            <p className={`text-[10px] font-mono ${exportMessage.includes("downloaded") ? "text-positive" : "text-negative"}`}>
+              {exportMessage}
+            </p>
+          )}
+        </div>
       </div>
 
       {snapshot?.fx_warning && (
@@ -754,4 +823,3 @@ export default function HoldingsPage() {
     </div>
   );
 }
-
