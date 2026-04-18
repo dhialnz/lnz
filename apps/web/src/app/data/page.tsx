@@ -28,13 +28,44 @@ function nextWeekDateStr(isoDate: string | null): string {
   return d.toISOString().slice(0, 10);
 }
 
+async function downloadPortfolioDataExport(): Promise<Blob> {
+  const tokenRes = await fetch("/api/auth/token", {
+    method: "GET",
+    cache: "no-store",
+    credentials: "include",
+  });
+  const tokenPayload = tokenRes.ok
+    ? (await tokenRes.json().catch(() => null)) as { token?: string | null } | null
+    : null;
+  const token =
+    typeof tokenPayload?.token === "string" && tokenPayload.token.length > 0
+      ? tokenPayload.token
+      : null;
+
+  const headers: Record<string, string> = token
+    ? { Authorization: `Bearer ${token}` }
+    : {};
+  const res = await fetch("/api/v1/portfolio/export.xlsx", {
+    method: "GET",
+    headers,
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(detail?.detail ?? `Export download error ${res.status}`);
+  }
+  return res.blob();
+}
+
 export default function DataPage() {
   const [rows, setRows] = useState<PortfolioSeriesRow[]>([]);
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportSuccess, setExportSuccess] = useState<string | null>(null);
 
   const latestDate = rows.length > 0 ? rows[rows.length - 1].date : null;
   const nextDate = nextWeekDateStr(latestDate);
@@ -115,6 +146,29 @@ export default function DataPage() {
     }
   };
 
+  const handleExportData = async () => {
+    setExporting(true);
+    setExportError(null);
+    setExportSuccess(null);
+    try {
+      const blob = await downloadPortfolioDataExport();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      const latestExportDate = rows[rows.length - 1]?.date ?? new Date().toISOString().slice(0, 10);
+      anchor.href = url;
+      anchor.download = `alphenzi_data_grid_${latestExportDate}.xlsx`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      setExportSuccess(`Exported ${rows.length} rows to Excel.`);
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : "Export failed.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64 text-muted font-mono text-sm">
@@ -136,11 +190,25 @@ export default function DataPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-4xl leading-none font-serif tracking-tight text-white">Portfolio Data</h1>
-        <p className="text-xs font-mono text-muted mt-0.5">
-          View all weekly rows and append new weeks manually.
-        </p>
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h1 className="text-4xl leading-none font-serif tracking-tight text-white">Portfolio Data</h1>
+          <p className="text-xs font-mono text-muted mt-0.5">
+            View all weekly rows and append new weeks manually.
+          </p>
+        </div>
+        <div className="flex flex-col items-start gap-2 md:items-end">
+          <button
+            type="button"
+            onClick={handleExportData}
+            disabled={exporting || rows.length === 0}
+            className="text-xs font-mono px-3 py-2 rounded border border-accent/40 text-accent hover:bg-accent/10 transition-colors disabled:opacity-50"
+          >
+            {exporting ? "Preparing Excel..." : "Export Data"}
+          </button>
+          {exportSuccess && <p className="text-xs font-mono text-positive">{exportSuccess}</p>}
+          {exportError && <p className="text-xs font-mono text-negative">{exportError}</p>}
+        </div>
       </div>
 
       <div className="bg-panel border border-border rounded-xl p-4">

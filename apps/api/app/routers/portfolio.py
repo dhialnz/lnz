@@ -465,6 +465,121 @@ def download_import_template(user: User = Depends(get_current_user)):
     )
 
 
+@router.get("/export.xlsx")
+def export_portfolio_series_excel(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    import pandas as pd
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    portfolio_id = require_active_portfolio_id(user)
+    rows = (
+        db.query(PortfolioSeries)
+        .filter(
+            PortfolioSeries.user_id == user.id,
+            PortfolioSeries.portfolio_id == portfolio_id,
+        )
+        .order_by(PortfolioSeries.date.desc())
+        .all()
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="No portfolio data found. Please import data.")
+
+    export_rows = [
+        {
+            "Date": row.date,
+            "Total Value": float(row.total_value),
+            "Net Deposits": float(row.net_deposits),
+            "Period Deposits": float(row.period_deposits),
+            "SPY Close": _safe_val(row.spy_close),
+            "Period Return": float(row.period_return),
+            "SPY Return": float(row.benchmark_return),
+            "Alpha": _safe_val(row.alpha),
+            "Cum Alpha": _safe_val(row.cumulative_alpha),
+            "4W Alpha": _safe_val(row.rolling_4w_alpha),
+            "8W Vol": _safe_val(row.rolling_8w_vol),
+            "8W Alpha Vol": _safe_val(row.rolling_8w_alpha_vol),
+            "Running Peak": _safe_val(row.running_peak),
+            "Drawdown": _safe_val(row.drawdown),
+            "Beta 12W": _safe_val(row.beta_12w),
+        }
+        for row in rows
+    ]
+    df = pd.DataFrame(export_rows)
+
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Portfolio Data")
+
+        sheet = writer.sheets["Portfolio Data"]
+        sheet.freeze_panes = "A2"
+        sheet.auto_filter.ref = sheet.dimensions
+
+        header_fill = PatternFill(fill_type="solid", fgColor="1F1F1F")
+        header_font = Font(bold=True, color="F3F4F6")
+        for cell in sheet[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center")
+
+        column_widths = {
+            "A": 14,
+            "B": 16,
+            "C": 16,
+            "D": 18,
+            "E": 12,
+            "F": 14,
+            "G": 12,
+            "H": 12,
+            "I": 12,
+            "J": 12,
+            "K": 12,
+            "L": 14,
+            "M": 14,
+            "N": 12,
+            "O": 10,
+        }
+        for key, width in column_widths.items():
+            sheet.column_dimensions[key].width = width
+
+        currency_columns = ("B", "C", "D", "M")
+        number_columns = ("E", "O")
+        percent_columns_3dp = ("F", "G", "H", "I", "J", "K", "L")
+        percent_columns_2dp = ("N",)
+
+        for cell in sheet["A"][1:]:
+            if cell.value is not None:
+                cell.number_format = "yyyy-mm-dd"
+        for column in currency_columns:
+            for cell in sheet[column][1:]:
+                if cell.value is not None:
+                    cell.number_format = '"$"#,##0.00'
+        for column in number_columns:
+            for cell in sheet[column][1:]:
+                if cell.value is not None:
+                    cell.number_format = "0.000"
+        for column in percent_columns_3dp:
+            for cell in sheet[column][1:]:
+                if cell.value is not None:
+                    cell.number_format = "0.000%"
+        for column in percent_columns_2dp:
+            for cell in sheet[column][1:]:
+                if cell.value is not None:
+                    cell.number_format = "0.00%"
+
+    buf.seek(0)
+    latest_date = rows[0].date.isoformat()
+    headers = {
+        "Content-Disposition": f'attachment; filename="alphenzi_data_grid_{latest_date}.xlsx"'
+    }
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
+
+
 @router.get("/series", response_model=list[PortfolioSeriesRow])
 def get_series(
     db: Session = Depends(get_db),
